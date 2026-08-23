@@ -1,0 +1,1820 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Analitik Data Pajak Daerah — PKB</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+:root{
+  --navy-900:#0A1E38; --navy-800:#0F2A4A; --navy-700:#15385F; --navy-600:#1C4A7A;
+  --teal-500:#1B8F82; --teal-100:#DEF0ED;
+  --gold-400:#C99A2E; --gold-100:#F8EFD8;
+  --red-600:#B3372A; --red-100:#FBE8E4;
+  --cream-50:#F6F3EA; --paper:#FFFDF8;
+  --ink-900:#171C22; --ink-600:#4F5A66; --ink-400:#8C93A0;
+  --line:#DEDACB; --line-soft:#EAE6D9;
+  --radius:12px;
+  --font-d:'Space Grotesk',sans-serif; --font-b:'Inter',sans-serif; --font-m:'IBM Plex Mono',monospace;
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--cream-50);color:var(--ink-900);font-family:var(--font-b);}
+h1,h2,h3,.disp{font-family:var(--font-d);}
+.mono{font-family:var(--font-m);font-variant-numeric:tabular-nums;}
+#app{max-width:1280px;margin:0 auto;padding:0 20px 60px;}
+
+/* ===== Topbar ===== */
+.topbar{background:linear-gradient(135deg,var(--navy-900),var(--navy-700));color:#fff;
+  margin:0 -20px 0; padding:22px 20px 18px; border-radius:0 0 18px 18px; position:relative; overflow:hidden;}
+.topbar::after{content:"";position:absolute;right:-60px;top:-60px;width:220px;height:220px;
+  border:1px solid rgba(255,255,255,.12);border-radius:50%;}
+.topbar::before{content:"";position:absolute;right:20px;top:30px;width:120px;height:120px;
+  border:1px dashed rgba(212,167,44,.35);border-radius:50%;}
+.brand-row{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;position:relative;z-index:1;}
+.brand-row .eyebrow{font-family:var(--font-m);font-size:11px;letter-spacing:.14em;color:var(--gold-400);
+  text-transform:uppercase;}
+.topbar h1{font-size:26px;margin:2px 0 2px;font-weight:700;letter-spacing:-.01em;}
+.topbar .sub{color:#C9D3E0;font-size:13.5px;margin:0;}
+.filters-row{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px;position:relative;z-index:1;}
+.filters-row select, .filters-row input[type=number]{
+  background:rgba(255,255,255,.08); color:#fff; border:1px solid rgba(255,255,255,.25);
+  border-radius:8px; padding:8px 10px; font-family:var(--font-b); font-size:13px; min-width:150px;}
+.filters-row select option{color:#111;}
+.mode-toggle{display:flex; border:1px solid rgba(255,255,255,.25); border-radius:8px; overflow:hidden;}
+.mode-toggle button{background:transparent;color:#C9D3E0;border:none;padding:8px 14px;font-size:13px;
+  cursor:pointer;font-family:var(--font-b);font-weight:600;}
+.mode-toggle button.active{background:var(--gold-400);color:var(--navy-900);}
+.actions-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;position:relative;z-index:1;}
+.btn{border:none;border-radius:8px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;
+  font-family:var(--font-b);}
+.btn-primary{background:var(--gold-400);color:var(--navy-900);}
+.btn-ghost{background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.25);}
+.btn-ghost:hover, .btn-primary:hover{filter:brightness(1.08);}
+#fileInput{display:none;}
+
+/* ===== Tabs ===== */
+.tabs{display:flex;gap:4px;overflow-x:auto;margin:18px 0 4px;padding-bottom:2px;border-bottom:1px solid var(--line);}
+.tab-btn{flex:0 0 auto;background:none;border:none;padding:10px 14px;font-family:var(--font-b);
+  font-weight:600;font-size:13px;color:var(--ink-600);cursor:pointer;border-bottom:2px solid transparent;
+  white-space:nowrap;}
+.tab-btn.active{color:var(--navy-800);border-bottom-color:var(--gold-400);}
+
+/* ===== Cards / layout ===== */
+.section-title{font-size:19px;font-weight:700;margin:22px 0 4px;color:var(--navy-800);}
+.section-desc{font-size:13px;color:var(--ink-600);margin:0 0 14px;}
+.grid{display:grid;gap:14px;}
+.grid-4{grid-template-columns:repeat(4,1fr);}
+.grid-3{grid-template-columns:repeat(3,1fr);}
+.grid-2{grid-template-columns:repeat(2,1fr);}
+@media(max-width:900px){.grid-4{grid-template-columns:repeat(2,1fr);}.grid-3{grid-template-columns:repeat(2,1fr);}.grid-2{grid-template-columns:1fr;}}
+@media(max-width:560px){.grid-4{grid-template-columns:1fr;}}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);padding:16px;}
+.kpi-label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-400);font-weight:600;}
+.kpi-value{font-size:22px;font-weight:700;margin-top:6px;color:var(--navy-800);}
+.kpi-sub{font-size:12px;color:var(--ink-600);margin-top:4px;}
+.pos{color:var(--teal-500);} .neg{color:var(--red-600);}
+.empty{border:1px dashed var(--line);border-radius:var(--radius);padding:26px;text-align:center;
+  color:var(--ink-600);font-size:13.5px;background:var(--paper);}
+.empty b{color:var(--navy-800);}
+
+/* stamp ring (signature element) */
+.stamp-wrap{display:flex;align-items:center;gap:20px;}
+.stamp{width:132px;height:132px;border-radius:50%;flex:0 0 auto;position:relative;
+  display:flex;align-items:center;justify-content:center;background:var(--navy-900);}
+.stamp::before{content:"";position:absolute;inset:6px;border-radius:50%;border:1px dashed rgba(212,167,44,.55);}
+.stamp .pct{font-family:var(--font-d);font-weight:700;font-size:26px;color:#fff;}
+.stamp .lbl{position:absolute;bottom:14px;font-family:var(--font-m);font-size:8px;letter-spacing:.14em;
+  color:var(--gold-400);}
+
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-400);
+  padding:8px 10px;border-bottom:1px solid var(--line);font-weight:600;}
+td{padding:8px 10px;border-bottom:1px solid var(--line-soft);}
+tr:last-child td{border-bottom:none;}
+.right{text-align:right;}
+.chart-box{position:relative;height:280px;}
+.chart-box.short{height:210px;}
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;}
+.badge-pkb{background:var(--teal-100);color:var(--teal-500);}
+.badge-opsen{background:var(--gold-100);color:#8a6a10;}
+.badge-esamsat{background:#E4E9F5;color:var(--navy-700);}
+.badge-komponen{background:var(--red-100);color:var(--red-600);}
+.badge-bbnkb{background:#E8E1F5;color:#5B3FA0;}
+
+/* modal */
+.modal-backdrop{position:fixed;inset:0;background:rgba(10,20,35,.55);display:flex;align-items:center;
+  justify-content:center;z-index:50;padding:16px;}
+.modal{background:var(--paper);border-radius:14px;max-width:460px;width:100%;padding:22px;
+  max-height:88vh;overflow:auto;}
+.modal.modal-wide{max-width:920px;}
+.modal h3{margin:0 0 4px;font-size:17px;color:var(--navy-800);}
+.modal p.hint{font-size:12.5px;color:var(--ink-600);margin:0 0 14px;}
+.field{margin-bottom:12px;}
+.field label{display:block;font-size:12px;font-weight:600;color:var(--ink-600);margin-bottom:4px;}
+.field select, .field input{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;
+  font-size:13.5px;font-family:var(--font-b);}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;}
+.btn-secondary{background:var(--cream-50);color:var(--ink-900);border:1px solid var(--line);
+  border-radius:8px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--navy-900);
+  color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;z-index:60;box-shadow:0 6px 20px rgba(0,0,0,.2);}
+.data-mgr-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;
+  border-bottom:1px solid var(--line-soft);font-size:13px;gap:8px;}
+.data-mgr-row:last-child{border-bottom:none;}
+.login-overlay{position:fixed;inset:0;background:linear-gradient(135deg,var(--navy-900),var(--navy-700));
+  display:flex;align-items:center;justify-content:center;z-index:100;padding:20px;}
+.login-card{background:var(--paper);border-radius:16px;padding:32px 28px;max-width:360px;width:100%;text-align:center;}
+.login-card h2{margin:0 0 6px;font-size:19px;color:var(--navy-800);}
+.login-card p{font-size:13px;color:var(--ink-600);margin:0 0 20px;}
+.login-card .btn-primary{width:100%;padding:11px;font-size:14px;}
+.userbar{position:fixed;top:10px;right:14px;z-index:40;display:flex;align-items:center;gap:8px;
+  background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);border-radius:20px;padding:4px 6px 4px 12px;color:#fff;font-size:12px;}
+.userbar button{background:none;border:none;color:#fff;cursor:pointer;font-size:12px;font-weight:600;
+  padding:5px 10px;border-radius:14px;background:rgba(255,255,255,.15);}
+.del-btn{background:none;border:none;color:var(--red-600);cursor:pointer;font-size:12px;font-weight:600;}
+.footnote{font-size:11.5px;color:var(--ink-400);margin-top:10px;}
+.batch-table{width:100%;border-collapse:collapse;font-size:12.5px;}
+.batch-table th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--ink-400);
+  padding:6px 6px;border-bottom:1px solid var(--line);font-weight:600;}
+.batch-table td{padding:5px 6px;border-bottom:1px solid var(--line-soft);vertical-align:middle;}
+.batch-table input, .batch-table select{width:100%;padding:6px 7px;border:1px solid var(--line);border-radius:6px;
+  font-size:12.5px;font-family:var(--font-b);}
+.batch-table tr.row-error td{background:var(--red-100);}
+.batch-table .row-status{font-size:11px;color:var(--ink-600);white-space:nowrap;}
+.batch-table .row-status.err{color:var(--red-600);font-weight:600;}
+.row-remove{background:none;border:none;color:var(--red-600);cursor:pointer;font-size:16px;line-height:1;padding:2px 6px;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar">
+    <div class="brand-row">
+      <span class="eyebrow">Bapenda Provinsi Jawa Tengah</span>
+    </div>
+    <h1>Analitik Data Pajak Daerah</h1>
+    <p class="sub">Pajak Kendaraan Bermotor (PKB) &amp; Opsen PKB — capaian, komponen, dan tren per UPPD</p>
+    <div class="filters-row">
+      <select id="f-uppd"></select>
+      <select id="f-tahun"></select>
+      <select id="f-bulan"></select>
+      <div class="mode-toggle">
+        <button id="mode-kumulatif" class="active">Kumulatif</button>
+        <button id="mode-bulanan">Bulanan</button>
+      </div>
+    </div>
+    <div class="actions-row">
+      <button class="btn btn-primary" id="btn-upload">⬆ Upload Data (bisa banyak file sekaligus)</button>
+      <button class="btn btn-ghost" id="btn-target">🎯 Atur Target (manual)</button>
+      <button class="btn btn-ghost" id="btn-target-upload">📥 Upload Target (Excel)</button>
+      <button class="btn btn-ghost" id="btn-manage">🗂 Kelola Data</button>
+    </div>
+    <input type="file" id="fileInput" multiple accept=".xlsx,.xls">
+    <input type="file" id="targetFileInput" accept=".xlsx,.xls">
+  </div>
+
+  <div class="tabs" id="tabs"></div>
+  <div id="content"></div>
+</div>
+<div id="modalRoot"></div>
+<div id="loginOverlay" style="display:none;"></div>
+
+<script type="module">
+/* =========================================================================
+   ANALITIK DATA PAJAK DAERAH — app.js (inline)
+   ========================================================================= */
+
+/* ---------- Firebase (dipakai HANYA saat dijalankan di luar Claude, mis. GitHub Pages/Firebase Hosting) ---------- */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
+import { getFirestore, doc, setDoc, getDoc, getDocs, deleteDoc, collection } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+import { getAuth, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
+
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyC_BNW119yn2mzMaZlR-jDLMBDQpGs3jVw",
+  authDomain: "analitik-pajak-daerah.firebaseapp.com",
+  projectId: "analitik-pajak-daerah",
+  storageBucket: "analitik-pajak-daerah.firebasestorage.app",
+  messagingSenderId: "244981013609",
+  appId: "1:244981013609:web:2e1e3860fc901cb89356f8",
+  measurementId: "G-DMTFCHVHYG"
+};
+const FIRESTORE_COLLECTION = 'analitik_pajak_daerah';
+
+// Deteksi otomatis: ada window.storage (di dalam Claude) -> pakai itu; kalau tidak -> pakai Firebase.
+const USE_FIREBASE = (typeof window.storage === 'undefined');
+let fbApp=null, fbDb=null, fbAuth=null, fbUser=null;
+if(USE_FIREBASE){
+  fbApp = initializeApp(firebaseConfig);
+  fbDb = getFirestore(fbApp);
+  fbAuth = getAuth(fbApp);
+}
+
+const MONTHS = ['JANUARI','FEBRUARI','MARET','APRIL','MEI','JUNI','JULI','AGUSTUS','SEPTEMBER','OKTOBER','NOVEMBER','DESEMBER'];
+const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+
+// Master list of the 37 UPPD: fixed display order + canonical name + raw names
+// as they appear inside uploaded source files (e.g. "UPPD KAB. BANJARNEGARA").
+const UPPD_RAW_TO_CANONICAL = {
+  'KAB. BANJARNEGARA':'BANJARNEGARA','KAB. BANYUMAS':'PURWOKERTO','KAB. BATANG':'BATANG',
+  'KAB. BLORA':'BLORA','KAB. BOYOLALI':'BOYOLALI','KAB. BREBES':'BREBES','KAB. CILACAP':'CILACAP',
+  'KAB. DEMAK':'DEMAK','KAB. GROBOGAN':'PURWODADI','KAB. JEPARA':'JEPARA','KAB. KARANGANYAR':'KARANGANYAR',
+  'KAB. KEBUMEN':'KEBUMEN','KAB. KENDAL':'KENDAL','KAB. KLATEN':'KLATEN','KAB. KUDUS':'KUDUS',
+  'KAB. MAGELANG':'MUNGKID','KAB. PATI':'PATI','KAB. PEKALONGAN':'KAJEN','KAB. PEMALANG':'PEMALANG',
+  'KAB. PURBALINGGA':'PURBALINGGA','KAB. PURWOREJO':'PURWOREJO','KAB. REMBANG':'REMBANG',
+  'KAB. SEMARANG':'UNGARAN','KAB. SRAGEN':'SRAGEN','KAB. SUKOHARJO':'SUKOHARJO','KAB. TEGAL':'SLAWI',
+  'KAB. TEMANGGUNG':'TEMANGGUNG','KAB. WONOGIRI':'WONOGIRI','KAB. WONOSOBO':'WONOSOBO',
+  'KOTA MAGELANG':'MAGELANG','KOTA PEKALONGAN':'PEKALONGAN','KOTA SALATIGA':'SALATIGA',
+  'KOTA SEMARANG I':'SEMARANG I','KOTA SEMARANG II':'SEMARANG II','KOTA SEMARANG III':'SEMARANG III',
+  'KOTA SURAKARTA':'SURAKARTA','KOTA TEGAL':'TEGAL',
+};
+// Fixed display order (1-37), per the office's own ordering.
+const UPPD_ORDER = ['SEMARANG I','SEMARANG II','SEMARANG III','SALATIGA','UNGARAN','KENDAL','DEMAK',
+  'PURWODADI','SURAKARTA','SUKOHARJO','KLATEN','BOYOLALI','SRAGEN','KARANGANYAR','WONOGIRI','PATI',
+  'KUDUS','JEPARA','REMBANG','BLORA','PEKALONGAN','KAJEN','BATANG','PEMALANG','TEGAL','SLAWI','BREBES',
+  'PURWOKERTO','CILACAP','PURBALINGGA','BANJARNEGARA','MAGELANG','MUNGKID','PURWOREJO','KEBUMEN',
+  'TEMANGGUNG','WONOSOBO'];
+const UPPD_MASTER = UPPD_ORDER.map((canonical,i)=>({canonical, order:i+1, slug: canonical.replace(/\s+/g,'_')}));
+function uppdSlugOf(canonical){ return canonical.replace(/\s+/g,'_'); }
+
+// ---- Opsen granularity: 35 Kab/Kota (Semarang I/II/III digabung jadi "KOTA SEMARANG") ----
+const OPSEN_MERGE_GROUP = ['SEMARANG I','SEMARANG II','SEMARANG III'];
+const OPSEN_MERGE_LABEL = 'KOTA SEMARANG';
+const OPSEN_ORDER = (()=>{
+  const out=[]; let merged=false;
+  UPPD_ORDER.forEach(name=>{
+    if(OPSEN_MERGE_GROUP.includes(name)){ if(!merged){ out.push(OPSEN_MERGE_LABEL); merged=true; } }
+    else out.push(name);
+  });
+  return out;
+})();
+function opsenEntitySlugOf(name){ return name.replace(/\s+/g,'_'); }
+// map a raw 37-UPPD slug -> its 35-entity opsen slug
+function opsenEntityOfUppdSlug(uppdSlug){
+  const canonical = UPPD_ORDER.find(n=>uppdSlugOf(n)===uppdSlug);
+  if(canonical && OPSEN_MERGE_GROUP.includes(canonical)) return opsenEntitySlugOf(OPSEN_MERGE_LABEL);
+  return uppdSlug;
+}
+// map an opsen entity slug -> list of raw 37-UPPD slugs it aggregates
+function rawUppdSlugsForOpsenEntity(entitySlug){
+  if(entitySlug===opsenEntitySlugOf(OPSEN_MERGE_LABEL)) return OPSEN_MERGE_GROUP.map(uppdSlugOf);
+  return [entitySlug];
+}
+const OPSEN_ENTITIES = OPSEN_ORDER.map((canonical,i)=>({canonical, order:i+1, slug:opsenEntitySlugOf(canonical)}));
+
+// ---- Klasifikasi kode jenis kendaraan (PD.05) ----
+// Roda: A1..I4 = Roda 4, J* = Roda 2, K* = Roda 3
+// Kepemilikan: akhiran 1 = Pribadi, akhiran 2 = Umum, akhiran 4 = Dinas
+function classifyRoda(kode){
+  if(!kode) return null;
+  const letter = kode.trim().charAt(0).toUpperCase();
+  if(letter>='A' && letter<='I') return 'RODA_4';
+  if(letter==='J') return 'RODA_2';
+  if(letter==='K') return 'RODA_3';
+  return null;
+}
+function classifyKepemilikan(kode){
+  if(!kode) return null;
+  const last = kode.trim().charAt(kode.trim().length-1);
+  if(last==='1') return 'PRIBADI';
+  if(last==='2') return 'UMUM';
+  if(last==='4') return 'DINAS';
+  return null;
+}
+const RODA_LABEL = {RODA_2:'Roda 2', RODA_3:'Roda 3', RODA_4:'Roda 4'};
+const KEPEMILIKAN_LABEL = {PRIBADI:'Pribadi', UMUM:'Umum', DINAS:'Dinas'};
+const VEHICLE_ICONS = {
+  RODA_4:`<svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 16v-3.5L5 8h11l3 4.5V16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 16h1.5M21 16h-1.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M5 8l1.8-3.2A2 2 0 0 1 8.6 4h6.8a2 2 0 0 1 1.8 1.1L19 8" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="7.5" cy="16" r="1.8" stroke="currentColor" stroke-width="1.6"/><circle cx="16.5" cy="16" r="1.8" stroke="currentColor" stroke-width="1.6"/></svg>`,
+  RODA_2:`<svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="5.5" cy="17" r="2.6" stroke="currentColor" stroke-width="1.6"/><circle cx="18.5" cy="17" r="2.6" stroke="currentColor" stroke-width="1.6"/><path d="M5.5 17l4-7h4l2 4h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.5 10h3.2M9 7h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
+  RODA_3:`<svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="6" cy="17" r="2.4" stroke="currentColor" stroke-width="1.6"/><circle cx="18" cy="17" r="2.4" stroke="currentColor" stroke-width="1.6"/><path d="M6 17l3-6h4.5L16 17" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M13 8.5h3.5v2.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M18 17V11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
+};
+function matchCanonicalFromRaw(raw){
+  if(!raw) return null;
+  const norm = raw.toUpperCase().trim().replace(/\s+/g,' ');
+  if(UPPD_RAW_TO_CANONICAL[norm]) return UPPD_RAW_TO_CANONICAL[norm];
+  // fallback: exact canonical name already used as raw (e.g. re-uploads)
+  if(UPPD_ORDER.includes(norm)) return norm;
+  return null;
+}
+
+const TABS = [
+  {id:'capaian', label:'Capaian PKB'},
+  {id:'komponen', label:'Per Komponen'},
+  {id:'opsen', label:'Opsen PKB'},
+  {id:'capaian_bbnkb', label:'Capaian BBNKB'},
+];
+
+let state = {
+  tab: 'capaian',
+  uppd: '__ALL__',
+  tahun: new Date().getFullYear(),
+  bulan: 1,
+  mode: 'kumulatif', // or 'bulanan'
+  opsenEntity: '__ALL__', // local filter for Opsen tab (35 entitas)
+  hariElapsedOverride: null, // manual override for "jumlah hari" berjalan
+  hariRemainOverride: null,  // manual override for "jumlah hari" sisa
+  komponenAdjustPct: 0, // penyesuaian % untuk bulan yang belum terealisasi di tab Per Komponen
+};
+
+let DB = { pd05: [], komponen: [], bbnkb: [], targetsPkb: {}, targetsOpsen: {}, targetsBbnkb: {}, targetsOpsenBbnkb: {}, targetsPap: {}, uppdList: [] };
+const charts = {}; // canvas id -> Chart instance
+
+/* ---------- utils ---------- */
+function toNum(v){
+  if(v===null||v===undefined||v==='') return 0;
+  if(typeof v==='number') return v;
+  const c = String(v).replace(/[^0-9.-]/g,'');
+  const n = parseFloat(c);
+  return isNaN(n)?0:n;
+}
+function slugify(s){ return (s||'').toUpperCase().trim().replace(/\./g,'').replace(/\s+/g,'_'); }
+function fmtRp(n){
+  if(n===null||n===undefined||isNaN(n)) return '–';
+  const sign = n<0?'-':'';
+  return sign+'Rp '+Math.round(Math.abs(n)).toLocaleString('id-ID');
+}
+function fmtRpShort(n){
+  if(n===null||n===undefined||isNaN(n)) return '–';
+  const abs = Math.abs(n);
+  let out;
+  if(abs>=1e9) out = (n/1e9).toLocaleString('id-ID',{maximumFractionDigits:2})+' M';
+  else if(abs>=1e6) out = (n/1e6).toLocaleString('id-ID',{maximumFractionDigits:1})+' Jt';
+  else out = n.toLocaleString('id-ID');
+  return 'Rp '+out;
+}
+function fmtPct(n, digits){
+  if(n===null||n===undefined||isNaN(n)) return '–';
+  return n.toLocaleString('id-ID',{minimumFractionDigits:digits??1,maximumFractionDigits:digits??1})+'%';
+}
+function fmtInt(n){ if(n===null||n===undefined||isNaN(n)) return '–'; return Math.round(n).toLocaleString('id-ID'); }
+function uid(){ return Math.random().toString(36).slice(2,9); }
+
+function workingDaysInMonth(year, month1to12){
+  const days = new Date(year, month1to12, 0).getDate();
+  let c=0;
+  for(let d=1; d<=days; d++){
+    const dt = new Date(year, month1to12-1, d);
+    if(dt.getDay()!==0) c++; // exclude Sunday
+  }
+  return c;
+}
+function workingDaysRange(year, mFrom, mTo){
+  if(mTo<mFrom) return 0;
+  let c=0;
+  for(let m=mFrom; m<=mTo; m++) c += workingDaysInMonth(year,m);
+  return c;
+}
+function totalWorkingDaysYear(year){ return workingDaysRange(year,1,12); }
+
+/* ---------- storage layer (adapter: window.storage di Claude, Firestore saat deploy sendiri) ---------- */
+async function saveRecord(key, obj){
+  try{
+    if(USE_FIREBASE) await setDoc(doc(fbDb, FIRESTORE_COLLECTION, key), {value: JSON.stringify(obj)});
+    else await window.storage.set(key, JSON.stringify(obj), false);
+  }catch(e){ console.error('storage set failed', key, e); }
+}
+async function deleteRecord(key){
+  try{
+    if(USE_FIREBASE) await deleteDoc(doc(fbDb, FIRESTORE_COLLECTION, key));
+    else await window.storage.delete(key, false);
+  }catch(e){ console.error('storage delete failed', key, e); }
+}
+async function loadAllFromStorage(){
+  DB = { pd05: [], komponen: [], bbnkb: [], targetsPkb: {}, targetsOpsen: {}, targetsBbnkb: {}, targetsOpsenBbnkb: {}, targetsPap: {}, uppdList: [] };
+  try{
+    let entries = []; // [{key, value}]
+    if(USE_FIREBASE){
+      const snap = await getDocs(collection(fbDb, FIRESTORE_COLLECTION));
+      snap.forEach(d=> entries.push({key:d.id, value:d.data().value}));
+    } else {
+      const list = await window.storage.list('', false);
+      const keys = (list && list.keys) || [];
+      for(const k of keys){
+        const res = await window.storage.get(k, false);
+        if(res) entries.push({key:k, value:res.value});
+      }
+    }
+    for(const {key:k, value} of entries){
+      try{
+        if(!value) continue;
+        const val = JSON.parse(value);
+        if(k.startsWith('pd05:')) DB.pd05.push(val);
+        else if(k.startsWith('komponen:')) DB.komponen.push(val);
+        else if(k.startsWith('bbnkb:')) DB.bbnkb.push(val);
+        else if(k.startsWith('target:pkb:')) DB.targetsPkb[val.uppdSlug+'_'+val.tahun] = val;
+        else if(k.startsWith('target:opsen:')) DB.targetsOpsen[val.entitySlug+'_'+val.tahun] = val;
+        else if(k.startsWith('target:bbnkb:')) DB.targetsBbnkb[val.uppdSlug+'_'+val.tahun] = val;
+        else if(k.startsWith('target:opsen_bbnkb:')) DB.targetsOpsenBbnkb[val.entitySlug+'_'+val.tahun] = val;
+        else if(k.startsWith('target:pap:')) DB.targetsPap[val.uppdSlug+'_'+val.tahun] = val;
+        else if(k.startsWith('target:')){ // legacy combined target record — migrate on read
+          if(val.targetPkb!==undefined) DB.targetsPkb[val.uppdSlug+'_'+val.tahun] = {uppdSlug:val.uppdSlug, uppd:val.uppd, tahun:val.tahun, targetPkb:val.targetPkb};
+          if(val.targetOpsen!==undefined){
+            const eSlug = opsenEntityOfUppdSlug(val.uppdSlug);
+            const eName = OPSEN_ENTITIES.find(e=>e.slug===eSlug);
+            DB.targetsOpsen[eSlug+'_'+val.tahun] = {entitySlug:eSlug, entity: eName?eName.canonical:val.uppd, tahun:val.tahun, targetOpsen:val.targetOpsen};
+          }
+        }
+        else if(k==='uppdlist') DB.uppdList = val;
+      }catch(e){ console.error('bad record', k, e); }
+    }
+  }catch(e){ console.error('storage list failed', e); }
+  // rebuild uppdList from records too, in case uppdlist key missing entries
+  const seen = new Set(DB.uppdList.map(u=>u.slug));
+  [...DB.pd05, ...DB.komponen, ...DB.bbnkb].forEach(r=>{
+    if(r.uppdSlug && !seen.has(r.uppdSlug)){ seen.add(r.uppdSlug); DB.uppdList.push({slug:r.uppdSlug,name:r.uppd}); }
+  });
+}
+async function upsertUppdList(slug, name){
+  if(!DB.uppdList.find(u=>u.slug===slug)){
+    DB.uppdList.push({slug,name});
+    await saveRecord('uppdlist', DB.uppdList);
+  }
+}
+
+/* ---------- parsers ---------- */
+function detectFileType(rows){
+  const flat = rows.slice(0,15).map(r=>(r||[]).map(c=>c==null?'':String(c)).join(' | ')).join('\n');
+  if(/Kertas Kerja Piutang/i.test(flat)) return 'komponen';
+  if(/PENETAPAN,\s*PENGURANGAN,\s*PENERIMAAN DAN TUNGGAKAN BEA BALIK NAMA/i.test(flat)) return 'bbnkb';
+  if(/REKAPITULASI PENERIMAAN PAJAK KENDARAAN BERMOTOR/i.test(flat)) return 'pd05';
+  return 'unknown';
+}
+function pd05Block(r,o){ return {obyek:toNum(r[o]),pokok:toNum(r[o+1]),sanksi:toNum(r[o+2]),jumlah:toNum(r[o+3])}; }
+function parsePD05(rows, filename){
+  let bulanTahun=null, uppdLine=null;
+  for(const r of rows.slice(0,6)){
+    const c0=r&&r[0];
+    if(typeof c0==='string' && /BULAN\s*\/\s*TAHUN/i.test(c0)) bulanTahun=c0;
+    if(typeof c0==='string' && /^UPPD/i.test(c0.trim())) uppdLine=c0;
+  }
+  let bulan=null, tahun=null;
+  if(bulanTahun){
+    const m = bulanTahun.match(/:\s*([A-Za-z]+)\s*\/\s*(\d{4})/);
+    if(m){ bulan = MONTHS.indexOf(m[1].toUpperCase().trim())+1 || null; tahun = parseInt(m[2],10); }
+  }
+  let uppd=null, isEsamsat=false;
+  if(uppdLine){
+    uppd = uppdLine.replace(/^UPPD\s*/i,'').trim();
+    if(/E-SAMSAT/i.test(uppd)){ isEsamsat=true; uppd = uppd.replace(/\/\s*E-SAMSAT/i,'').trim(); }
+    const canonical = matchCanonicalFromRaw(uppd);
+    if(canonical) uppd = canonical; // pakai nomenklatur baku (mis. "KAB. BANJARNEGARA" -> "BANJARNEGARA")
+  }
+  let kategori='pkb';
+  if(/OPSEN/i.test(filename)) kategori='opsen';
+  else if(/E-?SAMSAT/i.test(filename) || isEsamsat) kategori='esamsat';
+
+  const items=[]; let total=null;
+  for(let i=0;i<rows.length;i++){
+    const r = rows[i]||[];
+    const no=r[0], jenis=r[1];
+    if(typeof no==='number' && typeof jenis==='string' && /^[A-Z]\d/.test(jenis.trim())){
+      items.push({
+        kode: jenis.trim().split(' ')[0], jenis: jenis.trim(),
+        sd_bulan_lalu: pd05Block(r,2), bulan_ini_lokal: pd05Block(r,6),
+        bulan_ini_diproses: pd05Block(r,10), bulan_ini_total: pd05Block(r,14),
+        sd_bulan_ini: pd05Block(r,18),
+      });
+    }
+    if(typeof r[0]==='string' && /JUMLAH BULAN INI/i.test(r[0])){
+      total = { sd_bulan_lalu:pd05Block(r,2), bulan_ini_lokal:pd05Block(r,6), bulan_ini_diproses:pd05Block(r,10),
+                bulan_ini_total:pd05Block(r,14), sd_bulan_ini:pd05Block(r,18) };
+    }
+  }
+  return {type:'pd05', kategori, uppd, bulan, tahun, items, total, filename};
+}
+
+/* ---------- BBNKB (PD.06) parser ---------- */
+// Struktur file beda dari PD.05 PKB: kode kendaraan cuma huruf tunggal A-K (tanpa sub-kode
+// kepemilikan 1/2/4), dan ada 2 seksi: "BBN I KBM BARU" & "BBN I NON KBM BARU".
+function bbnkbItemFromRow(r){
+  return {
+    sisa_lalu: {oby:toNum(r[2]), pokok:toNum(r[3]), sanksi:toNum(r[4])},
+    penetapan: {oby:toNum(r[5]), pokok:toNum(r[6]), sanksi:toNum(r[7])},
+    pengurangan: {oby:toNum(r[8]), pokok:toNum(r[9]), sanksi:toNum(r[10])},
+    tagihan: {oby:toNum(r[11]), pokok:toNum(r[12]), sanksi:toNum(r[13])},
+    angsuran: {oby:toNum(r[14]), pokok:toNum(r[15]), sanksi:toNum(r[16])},
+    penerimaan: {oby:toNum(r[17]), pokok:toNum(r[18]), sanksi:toNum(r[19])},
+    jumlah: {pokok:toNum(r[20]), sanksi:toNum(r[21])},
+    sisa_akhir: {oby:toNum(r[22]), pokok:toNum(r[23]), sanksi:toNum(r[24])},
+  };
+}
+function parseBBNKB(rows, filename){
+  let bulanTahun=null, uppdLine=null;
+  for(const r of rows.slice(0,6)){
+    const c0=r&&r[0];
+    if(typeof c0==='string' && /BULAN\s*\/?\s*TAHUN/i.test(c0)) bulanTahun=c0;
+    if(typeof c0==='string' && /^UPPD/i.test(c0.trim())) uppdLine=c0;
+  }
+  let bulan=null, tahun=null;
+  if(bulanTahun){
+    const m = bulanTahun.match(/:\s*([A-Za-z]+)\s*\/\s*(\d{4})/);
+    if(m){ bulan = MONTHS.indexOf(m[1].toUpperCase().trim())+1 || null; tahun = parseInt(m[2],10); }
+  }
+  let uppd=null;
+  if(uppdLine){
+    uppd = uppdLine.replace(/^UPPD\s*/i,'').trim();
+    const canonical = matchCanonicalFromRaw(uppd);
+    if(canonical) uppd = canonical;
+  }
+  const items=[]; let totalBaru=null, totalNonBaru=null, totalKeseluruhan=null;
+  let section=null;
+  for(let i=0;i<rows.length;i++){
+    const r = rows[i]||[];
+    const c0=r[0], c1=r[1];
+    if(c0===null && typeof c1==='string' && /^BBN\s*I\s*KBM\s*BARU$/i.test(c1.trim())){ section='baru'; continue; }
+    if(c0===null && typeof c1==='string' && /^BBN\s*I\s*NON\s*KBM\s*BARU$/i.test(c1.trim())){ section='non_baru'; continue; }
+    if(typeof c0==='number' && typeof c1==='string' && /^[A-Z]\s*-/.test(c1.trim()) && section){
+      items.push({kode:c1.trim().charAt(0), jenis:c1.trim(), section, ...bbnkbItemFromRow(r)});
+      continue;
+    }
+    if(typeof c0==='string'){
+      const label = c0.trim();
+      if(/^SUB JUMLAH BBN I KBM BARU BULAN INI$/i.test(label)) totalBaru = bbnkbItemFromRow(r);
+      else if(/^SUB JUMLAH BBN I NON KBM BARU BULAN INI$/i.test(label)) totalNonBaru = bbnkbItemFromRow(r);
+      else if(/^JUMLAH BBN BULAN INI$/i.test(label)) totalKeseluruhan = bbnkbItemFromRow(r);
+    }
+  }
+  return {type:'bbnkb', uppd, bulan, tahun, items, totalBaru, totalNonBaru, totalKeseluruhan, filename};
+}
+function extractKomponenCols(r){
+  return {
+    saldo_awal:{oby:toNum(r[3]),rp:toNum(r[4])},
+    penambahan:{
+      penetapan_jatuh_tempo:{oby:toNum(r[5]),rp:toNum(r[6])},
+      penetapan_sebelum_jatuh_tempo:{oby:toNum(r[7]),rp:toNum(r[8])},
+      penetapan_dihapusbuku:{oby:toNum(r[9]),rp:toNum(r[10])},
+      penetapan_mutasi_luar_provinsi:{oby:toNum(r[11]),rp:toNum(r[12])},
+      penetapan_kendaraan_baru:{oby:toNum(r[13]),rp:toNum(r[14])},
+      koreksi_penetapan:{oby:toNum(r[15]),rp:toNum(r[16])},
+    },
+    jumlah_penambahan:{oby:toNum(r[17]),rp:toNum(r[18])},
+    pengurangan:{
+      pembayaran_piutang_lalu:{oby:toNum(r[19]),rp:toNum(r[20])},
+      pembayaran_jatuh_tempo:{oby:toNum(r[21]),rp:toNum(r[22])},
+      pembayaran_sebelum_jatuh_tempo:{oby:toNum(r[23]),rp:toNum(r[24])},
+      pembayaran_dihapusbuku:{oby:toNum(r[25]),rp:toNum(r[26])},
+      pembayaran_mutasi_luar_provinsi:{oby:toNum(r[27]),rp:toNum(r[28])},
+      pembayaran_kendaraan_baru:{oby:toNum(r[29]),rp:toNum(r[30])},
+      penyesuaian_nilai:{oby:toNum(r[31]),rp:toNum(r[32])},
+      penghapusan:{oby:toNum(r[33]),rp:toNum(r[34])},
+    },
+    jumlah_mutasi_kurang:{oby:toNum(r[35]),rp:toNum(r[36])},
+    saldo_akhir:{oby:toNum(r[37]),rp:toNum(r[38])},
+  };
+}
+function parseKomponen(rows, filename){
+  let headerIdx=-1;
+  for(let i=0;i<rows.length;i++){ if((rows[i]||[]).some(c=>c==='URAIAN')){ headerIdx=i; break; } }
+  const items=[]; let total=null;
+  for(let i=headerIdx;i<rows.length;i++){
+    const r = rows[i]||[];
+    if(typeof r[0]==='string' && /TOTAL JUMLAH/i.test(r[0])){ total = extractKomponenCols(r); break; }
+    const kode=r[1], uraian=r[2];
+    if(typeof uraian==='string' && /^Piutang PKB/i.test(uraian) && typeof kode==='string' && kode.trim().length===2){
+      items.push({kode:kode.trim(), uraian:uraian.trim(), ...extractKomponenCols(r)});
+    }
+  }
+  // best-effort guess of bulan/tahun/uppd from filename
+  let bulan=null, tahun=null, uppdGuess=null;
+  const lower = filename.toLowerCase();
+  for(let m=0;m<MONTHS.length;m++){ if(lower.includes(MONTHS[m].toLowerCase())){ bulan=m+1; break; } }
+  const ym = filename.match(/(20\d{2})/); if(ym) tahun = parseInt(ym[1],10);
+  const base = filename.replace(/\.xlsx?$/i,'');
+  let baseNorm = base.toUpperCase().replace(/[_\-]+/g,' ').replace(/\s+/g,' ').trim();
+  // beberapa nama file pakai angka arab untuk Semarang (mis. "SEMARANG 1") padahal nama baku pakai romawi ("SEMARANG I")
+  baseNorm = baseNorm
+    .replace(/\bSEMARANG\s+1\b/,'SEMARANG I')
+    .replace(/\bSEMARANG\s+2\b/,'SEMARANG II')
+    .replace(/\bSEMARANG\s+3\b/,'SEMARANG III');
+  // coba cocokkan nama UPPD baku (kanonik) atau nama asli (KAB./KOTA ...) yang ada di dalam nama file
+  let matched = UPPD_ORDER.find(c=> new RegExp('(^|[^A-Z])'+c.replace(/\s+/g,'\\s+')+'([^A-Z]|$)').test(baseNorm));
+  if(!matched){
+    const rawKey = Object.keys(UPPD_RAW_TO_CANONICAL).find(raw=> baseNorm.includes(raw));
+    if(rawKey) matched = UPPD_RAW_TO_CANONICAL[rawKey];
+  }
+  uppdGuess = matched || base;
+  return {type:'komponen', uppd:uppdGuess, bulan, tahun, items, total, filename};
+}
+async function readWorkbook(file){
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, {type:'array'});
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(ws, {header:1, defval:null, raw:true});
+}
+async function readWorkbookAllSheets(file){
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, {type:'array'});
+  const out = {};
+  wb.SheetNames.forEach(name=>{ out[name] = XLSX.utils.sheet_to_json(wb.Sheets[name], {header:1, defval:null, raw:true}); });
+  return out;
+}
+
+/* ---------- parser: file rekap target (multi-sheet: "Rekap Target" + "Opsen") ---------- */
+function findUppdMasterByName(name){
+  const norm = (name||'').toUpperCase().trim().replace(/\s+/g,' ');
+  return UPPD_MASTER.find(u=>u.canonical===norm) || null;
+}
+// cocokkan nama entitas di sheet Opsen (mis. "Kab. Kendal", "Kota Semarang") ke slug 35-entitas
+function matchOpsenEntityFromRaw(raw){
+  if(!raw) return null;
+  const norm = raw.toUpperCase().trim().replace(/\s+/g,' ');
+  if(norm==='KOTA SEMARANG') return OPSEN_MERGE_LABEL;
+  const canonical = matchCanonicalFromRaw(norm);
+  if(canonical) return OPSEN_MERGE_GROUP.includes(canonical) ? OPSEN_MERGE_LABEL : canonical;
+  if(OPSEN_ORDER.includes(norm)) return norm;
+  return null;
+}
+function findHeaderCol(headerRow, regex){
+  for(let i=0;i<headerRow.length;i++){ if(typeof headerRow[i]==='string' && regex.test(headerRow[i])) return i; }
+  return -1;
+}
+function parseTargetWorkbook(sheets, filename){
+  const pkbRows=[], opsenRows=[];
+  const unmatchedPkb=[], unmatchedOpsen=[];
+
+  const sheetPkbName = Object.keys(sheets).find(n=>/rekap.*target/i.test(n)) || Object.keys(sheets)[0];
+  const rowsPkb = sheets[sheetPkbName] || [];
+  const headerIdxPkb = rowsPkb.findIndex(r=>(r||[]).some(c=>typeof c==='string' && /UPPD/i.test(c)));
+  if(headerIdxPkb>=0){
+    const header = rowsPkb[headerIdxPkb];
+    const colUppd = findHeaderCol(header, /^UPPD$/i);
+    const colPkb = findHeaderCol(header, /Target\s*PKB/i);
+    const colBbnkb = findHeaderCol(header, /Target\s*BBNKB/i);
+    const colPap = findHeaderCol(header, /Target\s*PAP/i);
+    for(let i=headerIdxPkb+1;i<rowsPkb.length;i++){
+      const r = rowsPkb[i]||[];
+      const name = r[colUppd];
+      if(!name || typeof name!=='string') continue;
+      const master = findUppdMasterByName(name);
+      if(!master){ unmatchedPkb.push(name); continue; }
+      pkbRows.push({
+        slug: master.slug, canonical: master.canonical,
+        targetPkb: colPkb>=0? toNum(r[colPkb]) : 0,
+        targetBbnkb: colBbnkb>=0? toNum(r[colBbnkb]) : 0,
+        targetPap: colPap>=0? toNum(r[colPap]) : 0,
+      });
+    }
+  }
+
+  const sheetOpsenName = Object.keys(sheets).find(n=>/opsen/i.test(n));
+  const rowsOpsen = sheetOpsenName ? (sheets[sheetOpsenName]||[]) : [];
+  const headerIdxOpsen = rowsOpsen.findIndex(r=>(r||[]).some(c=>typeof c==='string' && /UPPD/i.test(c)));
+  if(headerIdxOpsen>=0){
+    const header = rowsOpsen[headerIdxOpsen];
+    const colUppd = findHeaderCol(header, /^UPPD$/i);
+    const colOpsenPkb = findHeaderCol(header, /Target\s*Opsen\s*PKB/i);
+    const colOpsenBbnkb = findHeaderCol(header, /Target\s*Opsen\s*BBNKB/i);
+    for(let i=headerIdxOpsen+1;i<rowsOpsen.length;i++){
+      const r = rowsOpsen[i]||[];
+      const name = r[colUppd];
+      if(!name || typeof name!=='string') continue;
+      const entitySlugName = matchOpsenEntityFromRaw(name);
+      if(!entitySlugName){ unmatchedOpsen.push(name); continue; }
+      opsenRows.push({
+        slug: opsenEntitySlugOf(entitySlugName), canonical: entitySlugName,
+        targetOpsen: colOpsenPkb>=0? toNum(r[colOpsenPkb]) : 0,
+        targetOpsenBbnkb: colOpsenBbnkb>=0? toNum(r[colOpsenBbnkb]) : 0,
+      });
+    }
+  }
+  return {filename, pkbRows, opsenRows, unmatchedPkb, unmatchedOpsen};
+}
+
+/* ---------- upload flow (batch: banyak file sekaligus, satu modal konfirmasi) ---------- */
+async function handleFiles(fileList){
+  const files = Array.from(fileList);
+  if(files.length===0) return;
+  showToast(`Membaca ${files.length} berkas…`);
+  const results = [];
+  for(const file of files){
+    try{
+      const rows = await readWorkbook(file);
+      const kind = detectFileType(rows);
+      if(kind==='unknown'){ results.push({filename:file.name, error:'Format tidak dikenali'}); continue; }
+      let parsed;
+      if(kind==='pd05') parsed = parsePD05(rows, file.name);
+      else if(kind==='bbnkb') parsed = parseBBNKB(rows, file.name);
+      else parsed = parseKomponen(rows, file.name);
+      results.push({filename:file.name, parsed});
+    }catch(e){ console.error(e); results.push({filename:file.name, error:'Gagal membaca berkas'}); }
+  }
+  openBatchConfirmModal(results);
+}
+function kindNeedsManualMeta(parsed){ return parsed.type==='komponen'; }
+
+function openBatchConfirmModal(results){
+  const root = document.getElementById('modalRoot');
+  // canonical UPPD names for suggestions (37) + apa pun yang sudah pernah diupload
+  const suggestNames = new Set(UPPD_MASTER.map(u=>u.canonical));
+  DB.uppdList.forEach(u=>suggestNames.add(u.name));
+  const uppdOptions = [...suggestNames].map(n=>`<option value="${n}">`).join('');
+
+  const okRows = results.filter(r=>r.parsed);
+  const errRows = results.filter(r=>r.error);
+
+  const rowsHtml = okRows.map((r,i)=>{
+    const p = r.parsed;
+    const kategoriCell = p.type==='pd05' ? `
+      <select data-i="${i}" class="bt-kategori">
+        <option value="pkb" ${p.kategori==='pkb'?'selected':''}>PKB Reguler</option>
+        <option value="opsen" ${p.kategori==='opsen'?'selected':''}>Opsen PKB</option>
+        <option value="esamsat" ${p.kategori==='esamsat'?'selected':''}>E-Samsat</option>
+      </select>` : p.type==='bbnkb' ? `<span class="row-status">BBNKB (Baru + Non Baru)</span>` : `<span class="row-status">Komponen/Piutang</span>`;
+    return `
+      <tr data-row="${i}">
+        <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.filename}">${r.filename}</td>
+        <td style="min-width:150px;"><input list="batch-uppd-datalist" data-i="${i}" class="bt-uppd" value="${p.uppd||''}" placeholder="Nama UPPD"></td>
+        <td style="min-width:130px;">${kategoriCell}</td>
+        <td style="min-width:110px;"><select data-i="${i}" class="bt-bulan">${MONTHS.map((m,idx)=>`<option value="${idx+1}" ${p.bulan===idx+1?'selected':''}>${m}</option>`).join('')}</select></td>
+        <td style="width:80px;"><input type="number" data-i="${i}" class="bt-tahun" value="${p.tahun||new Date().getFullYear()}" min="2015" max="2100"></td>
+        <td class="row-status" data-status="${i}">${p.uppd? 'Siap' : 'UPPD kosong'}</td>
+        <td><button class="row-remove" data-remove="${i}" title="Hapus dari daftar">✕</button></td>
+      </tr>`;
+  }).join('');
+
+  const errHtml = errRows.length ? `
+    <p class="footnote" style="margin-top:12px;">${errRows.length} berkas dilewati: ${errRows.map(r=>`${r.filename} (${r.error})`).join('; ')}</p>` : '';
+
+  root.innerHTML = `
+  <div class="modal-backdrop" id="cf-backdrop">
+    <div class="modal modal-wide">
+      <h3>Konfirmasi ${okRows.length} Berkas</h3>
+      <p class="hint">Periksa UPPD, kategori, bulan &amp; tahun tiap baris (terdeteksi otomatis dari isi/nama berkas). Baris dengan UPPD kosong akan dilewati saat disimpan.</p>
+      <datalist id="batch-uppd-datalist">${uppdOptions}</datalist>
+      ${okRows.length===0? `<div class="empty">Tidak ada berkas valid untuk disimpan.</div>` : `
+      <div style="max-height:52vh;overflow:auto;">
+        <table class="batch-table"><thead><tr>
+          <th>Berkas</th><th>UPPD</th><th>Kategori</th><th>Bulan</th><th>Tahun</th><th>Status</th><th></th>
+        </tr></thead><tbody id="bt-tbody">${rowsHtml}</tbody></table>
+      </div>`}
+      ${errHtml}
+      <div class="modal-actions">
+        <button class="btn-secondary" id="cf-cancel">Batal</button>
+        ${okRows.length? `<button class="btn btn-primary" id="cf-save-all">Simpan Semua (${okRows.length})</button>` : ''}
+      </div>
+    </div>
+  </div>`;
+
+  document.getElementById('cf-cancel').onclick = ()=> root.innerHTML='';
+  document.getElementById('cf-backdrop').onclick = (e)=>{ if(e.target.id==='cf-backdrop') root.innerHTML=''; };
+
+  function refreshRowStatus(i){
+    const tr = root.querySelector(`tr[data-row="${i}"]`);
+    if(!tr) return;
+    const uppdVal = tr.querySelector('.bt-uppd').value.trim();
+    const statusEl = tr.querySelector(`[data-status="${i}"]`);
+    if(!uppdVal){ tr.classList.add('row-error'); statusEl.textContent='UPPD kosong'; statusEl.classList.add('err'); }
+    else { tr.classList.remove('row-error'); statusEl.textContent='Siap'; statusEl.classList.remove('err'); }
+  }
+  root.querySelectorAll('.bt-uppd').forEach(el=> el.addEventListener('input', ()=> refreshRowStatus(el.getAttribute('data-i'))));
+  root.querySelectorAll('.row-remove').forEach(btn=>{
+    btn.onclick = ()=>{ const tr = btn.closest('tr'); tr.remove(); };
+  });
+
+  const saveBtn = document.getElementById('cf-save-all');
+  if(saveBtn) saveBtn.onclick = async ()=>{
+    const tbody = document.getElementById('bt-tbody');
+    const trs = [...tbody.querySelectorAll('tr')];
+    let saved=0, skipped=0;
+    for(const tr of trs){
+      const i = tr.getAttribute('data-row');
+      const p = okRows[i].parsed;
+      const uppdName = tr.querySelector('.bt-uppd').value.trim();
+      if(!uppdName){ skipped++; continue; }
+      const bulan = parseInt(tr.querySelector('.bt-bulan').value,10);
+      const tahun = parseInt(tr.querySelector('.bt-tahun').value,10);
+      const uppdSlug = slugify(uppdName);
+      p.uppd = uppdName; p.uppdSlug = uppdSlug; p.bulan = bulan; p.tahun = tahun;
+      p.uploadedAt = new Date().toISOString();
+      if(p.type==='pd05'){
+        const katSel = tr.querySelector('.bt-kategori');
+        p.kategori = katSel ? katSel.value : p.kategori;
+        const key = `pd05:${p.kategori}:${uppdSlug}:${tahun}:${bulan}`;
+        await saveRecord(key, p);
+        DB.pd05 = DB.pd05.filter(r=>!(r.kategori===p.kategori && r.uppdSlug===uppdSlug && r.tahun===tahun && r.bulan===bulan));
+        DB.pd05.push(p);
+      } else if(p.type==='bbnkb'){
+        const key = `bbnkb:${uppdSlug}:${tahun}:${bulan}`;
+        await saveRecord(key, p);
+        DB.bbnkb = DB.bbnkb.filter(r=>!(r.uppdSlug===uppdSlug && r.tahun===tahun && r.bulan===bulan));
+        DB.bbnkb.push(p);
+      } else {
+        const key = `komponen:${uppdSlug}:${tahun}:${bulan}`;
+        await saveRecord(key, p);
+        DB.komponen = DB.komponen.filter(r=>!(r.uppdSlug===uppdSlug && r.tahun===tahun && r.bulan===bulan));
+        DB.komponen.push(p);
+      }
+      await upsertUppdList(uppdSlug, uppdName);
+      saved++;
+    }
+    root.innerHTML='';
+    showToast(skipped? `Tersimpan ${saved} berkas, ${skipped} dilewati (UPPD kosong)` : `Tersimpan ${saved} berkas`);
+    populateFilterOptions();
+    renderTab();
+  };
+}
+
+function showToast(msg){
+  const el = document.createElement('div');
+  el.className='toast'; el.textContent=msg;
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(), 3200);
+}
+
+/* ---------- upload target dari Excel (sekali jalan, 37 UPPD + 35 Kab/Kota) ---------- */
+async function handleTargetFile(file){
+  if(!file) return;
+  try{
+    const sheets = await readWorkbookAllSheets(file);
+    const parsed = parseTargetWorkbook(sheets, file.name);
+    if(parsed.pkbRows.length===0 && parsed.opsenRows.length===0){
+      showToast('Tidak ada baris target yang terbaca — periksa format file'); return;
+    }
+    openTargetUploadModal(parsed);
+  }catch(e){ console.error(e); showToast('Gagal membaca berkas target'); }
+}
+function openTargetUploadModal(parsed){
+  const root = document.getElementById('modalRoot');
+  const unmatchedHtml = (parsed.unmatchedPkb.length || parsed.unmatchedOpsen.length) ? `
+    <p class="footnote" style="color:var(--red-600);">
+      ${parsed.unmatchedPkb.length? `Tidak dikenali di sheet Rekap Target: ${parsed.unmatchedPkb.join(', ')}. ` : ''}
+      ${parsed.unmatchedOpsen.length? `Tidak dikenali di sheet Opsen: ${parsed.unmatchedOpsen.join(', ')}.` : ''}
+      Baris ini dilewati — bisa diisi manual lewat "Atur Target".
+    </p>` : '';
+  root.innerHTML = `
+  <div class="modal-backdrop" id="tgu-backdrop">
+    <div class="modal">
+      <h3>Upload Target dari Excel</h3>
+      <p class="hint">${parsed.filename} — terdeteksi <b>${parsed.pkbRows.length} UPPD</b> (PKB/BBNKB/PAP) dan <b>${parsed.opsenRows.length} Kab/Kota</b> (Opsen). File ini tidak memuat tahun, jadi isi tahun berlaku untuk semua baris di bawah ini.</p>
+      <div class="field"><label>Tahun</label>
+        <input type="number" id="tgu-tahun" value="${state.tahun}" min="2015" max="2100">
+      </div>
+      ${unmatchedHtml}
+      <p class="footnote">Target PKB &amp; Opsen PKB langsung aktif di aplikasi. Target BBNKB, Opsen BBNKB, dan PAP disimpan untuk dipakai saat modul BBNKB/PAP dibangun.</p>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="tgu-cancel">Batal</button>
+        <button class="btn btn-primary" id="tgu-save">Simpan Semua Target</button>
+      </div>
+    </div>
+  </div>`;
+  document.getElementById('tgu-cancel').onclick = ()=> root.innerHTML='';
+  document.getElementById('tgu-backdrop').onclick = (e)=>{ if(e.target.id==='tgu-backdrop') root.innerHTML=''; };
+  document.getElementById('tgu-save').onclick = async ()=>{
+    const tahun = parseInt(document.getElementById('tgu-tahun').value,10);
+    for(const row of parsed.pkbRows){
+      const objPkb = {uppdSlug:row.slug, uppd:row.canonical, tahun, targetPkb:row.targetPkb};
+      await saveRecord(`target:pkb:${row.slug}:${tahun}`, objPkb);
+      DB.targetsPkb[row.slug+'_'+tahun] = objPkb;
+      const objBbnkb = {uppdSlug:row.slug, uppd:row.canonical, tahun, targetBbnkb:row.targetBbnkb};
+      await saveRecord(`target:bbnkb:${row.slug}:${tahun}`, objBbnkb);
+      DB.targetsBbnkb[row.slug+'_'+tahun] = objBbnkb;
+      const objPap = {uppdSlug:row.slug, uppd:row.canonical, tahun, targetPap:row.targetPap};
+      await saveRecord(`target:pap:${row.slug}:${tahun}`, objPap);
+      DB.targetsPap[row.slug+'_'+tahun] = objPap;
+    }
+    for(const row of parsed.opsenRows){
+      const objOpsen = {entitySlug:row.slug, entity:row.canonical, tahun, targetOpsen:row.targetOpsen};
+      await saveRecord(`target:opsen:${row.slug}:${tahun}`, objOpsen);
+      DB.targetsOpsen[row.slug+'_'+tahun] = objOpsen;
+      const objOpsenBbnkb = {entitySlug:row.slug, entity:row.canonical, tahun, targetOpsenBbnkb:row.targetOpsenBbnkb};
+      await saveRecord(`target:opsen_bbnkb:${row.slug}:${tahun}`, objOpsenBbnkb);
+      DB.targetsOpsenBbnkb[row.slug+'_'+tahun] = objOpsenBbnkb;
+    }
+    root.innerHTML='';
+    showToast(`Target tahun ${tahun} tersimpan: ${parsed.pkbRows.length} UPPD, ${parsed.opsenRows.length} Kab/Kota`);
+    populateFilterOptions();
+    renderTab();
+  };
+}
+
+/* ---------- target modal ---------- */
+function openTargetModal(){
+  const root = document.getElementById('modalRoot');
+  const pkbOptions = UPPD_MASTER.map(u=>`<option value="${u.slug}">${u.canonical}</option>`).join('');
+  const opsenOptions = OPSEN_ENTITIES.map(e=>`<option value="${e.slug}">${e.canonical}</option>`).join('');
+  root.innerHTML = `
+  <div class="modal-backdrop" id="tg-backdrop">
+    <div class="modal">
+      <h3>Atur Target</h3>
+      <p class="hint">Target tahunan (Pokok). PKB menggunakan 37 UPPD; Opsen menggunakan 35 Kab/Kota (Kota Semarang I/II/III digabung).</p>
+      <div class="field"><label>Jenis Pajak</label>
+        <select id="tg-kategori">
+          <option value="pkb">PKB (per UPPD, 37)</option>
+          <option value="opsen">Opsen PKB (per Kab/Kota, 35)</option>
+        </select>
+      </div>
+      <div class="field"><label id="tg-entity-label">UPPD</label>
+        <select id="tg-entity">${pkbOptions}</select>
+      </div>
+      <div class="field"><label>Tahun</label>
+        <input type="number" id="tg-tahun" value="${state.tahun}" min="2015" max="2100">
+      </div>
+      <div class="field" id="tg-value-field"><label id="tg-value-label">Target PKB (Rp, Pokok)</label><input type="number" id="tg-value" placeholder="mis. 45000000000"></div>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="tg-cancel">Tutup</button>
+        <button class="btn btn-primary" id="tg-save">Simpan Target</button>
+      </div>
+    </div>
+  </div>`;
+  const katSel = document.getElementById('tg-kategori');
+  const entitySel = document.getElementById('tg-entity');
+  const entityLabel = document.getElementById('tg-entity-label');
+  const valueLabel = document.getElementById('tg-value-label');
+  function syncEntityOptions(){
+    if(katSel.value==='pkb'){ entitySel.innerHTML = pkbOptions; entityLabel.textContent='UPPD'; valueLabel.textContent='Target PKB (Rp, Pokok)'; }
+    else { entitySel.innerHTML = opsenOptions; entityLabel.textContent='Kab/Kota (Opsen)'; valueLabel.textContent='Target Opsen PKB (Rp, Pokok)'; }
+  }
+  function fillExisting(){
+    const tahun = parseInt(document.getElementById('tg-tahun').value,10);
+    const slug = entitySel.value;
+    if(katSel.value==='pkb'){
+      const t = DB.targetsPkb[slug+'_'+tahun];
+      document.getElementById('tg-value').value = t? t.targetPkb : '';
+    } else {
+      const t = DB.targetsOpsen[slug+'_'+tahun];
+      document.getElementById('tg-value').value = t? t.targetOpsen : '';
+    }
+  }
+  katSel.onchange = ()=>{ syncEntityOptions(); fillExisting(); };
+  entitySel.onchange = fillExisting;
+  document.getElementById('tg-tahun').onchange = fillExisting;
+  syncEntityOptions(); fillExisting();
+  document.getElementById('tg-cancel').onclick = ()=> root.innerHTML='';
+  document.getElementById('tg-backdrop').onclick = (e)=>{ if(e.target.id==='tg-backdrop') root.innerHTML=''; };
+  document.getElementById('tg-save').onclick = async ()=>{
+    const slug = entitySel.value; if(!slug){ showToast('Pilih entitas dulu'); return; }
+    const tahun = parseInt(document.getElementById('tg-tahun').value,10);
+    const value = toNum(document.getElementById('tg-value').value);
+    if(katSel.value==='pkb'){
+      const name = (UPPD_MASTER.find(u=>u.slug===slug)||{}).canonical || slug;
+      const obj = {uppdSlug:slug, uppd:name, tahun, targetPkb:value};
+      await saveRecord(`target:pkb:${slug}:${tahun}`, obj);
+      DB.targetsPkb[slug+'_'+tahun] = obj;
+    } else {
+      const name = (OPSEN_ENTITIES.find(e=>e.slug===slug)||{}).canonical || slug;
+      const obj = {entitySlug:slug, entity:name, tahun, targetOpsen:value};
+      await saveRecord(`target:opsen:${slug}:${tahun}`, obj);
+      DB.targetsOpsen[slug+'_'+tahun] = obj;
+    }
+    root.innerHTML=''; showToast('Target tersimpan'); renderTab();
+  };
+}
+
+/* ---------- data manager modal ---------- */
+function openManageModal(){
+  const root = document.getElementById('modalRoot');
+  const all = [
+    ...DB.pd05.map(r=>({...r, _key:`pd05:${r.kategori}:${r.uppdSlug}:${r.tahun}:${r.bulan}`, _kind:r.kategori})),
+    ...DB.komponen.map(r=>({...r, _key:`komponen:${r.uppdSlug}:${r.tahun}:${r.bulan}`, _kind:'komponen'})),
+    ...DB.bbnkb.map(r=>({...r, _key:`bbnkb:${r.uppdSlug}:${r.tahun}:${r.bulan}`, _kind:'bbnkb'})),
+  ].sort((a,b)=> (b.tahun-a.tahun) || (b.bulan-a.bulan) || a.uppd.localeCompare(b.uppd));
+  const badgeClass = {pkb:'badge-pkb',opsen:'badge-opsen',esamsat:'badge-esamsat',komponen:'badge-komponen',bbnkb:'badge-bbnkb'};
+  const rows = all.map(r=>`
+    <div class="data-mgr-row">
+      <span><span class="badge ${badgeClass[r._kind]}">${r._kind}</span> ${r.uppd} — ${MONTHS_SHORT[r.bulan-1]} ${r.tahun}</span>
+      <button class="del-btn" data-key="${r._key}">Hapus</button>
+    </div>`).join('') || '<p class="hint">Belum ada data terupload.</p>';
+  root.innerHTML = `
+  <div class="modal-backdrop" id="mg-backdrop">
+    <div class="modal" style="max-width:560px;">
+      <h3>Kelola Data Terupload</h3>
+      <p class="hint">${all.length} berkas tersimpan di penyimpanan lokal browser ini.</p>
+      <div style="max-height:50vh;overflow:auto;">${rows}</div>
+      <div class="modal-actions"><button class="btn-secondary" id="mg-close">Tutup</button></div>
+    </div>
+  </div>`;
+  document.getElementById('mg-close').onclick = ()=> root.innerHTML='';
+  document.getElementById('mg-backdrop').onclick = (e)=>{ if(e.target.id==='mg-backdrop') root.innerHTML=''; };
+  root.querySelectorAll('.del-btn').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const key = btn.getAttribute('data-key');
+      await deleteRecord(key);
+      DB.pd05 = DB.pd05.filter(r=>`pd05:${r.kategori}:${r.uppdSlug}:${r.tahun}:${r.bulan}` !== key);
+      DB.komponen = DB.komponen.filter(r=>`komponen:${r.uppdSlug}:${r.tahun}:${r.bulan}` !== key);
+      DB.bbnkb = DB.bbnkb.filter(r=>`bbnkb:${r.uppdSlug}:${r.tahun}:${r.bulan}` !== key);
+      openManageModal(); renderTab();
+    };
+  });
+}
+
+/* ---------- data query helpers ---------- */
+function pd05Records(kategori, uppdSlug){
+  return DB.pd05.filter(r=> r.kategori===kategori && (uppdSlug==='__ALL__' || r.uppdSlug===uppdSlug));
+}
+function sumBlocks(list){
+  const blank=()=>({obyek:0,pokok:0,sanksi:0,jumlah:0});
+  const out = {sd_bulan_lalu:blank(),bulan_ini_lokal:blank(),bulan_ini_diproses:blank(),bulan_ini_total:blank(),sd_bulan_ini:blank()};
+  list.forEach(rec=>{
+    Object.keys(out).forEach(k=>{
+      out[k].obyek+=rec.total[k].obyek; out[k].pokok+=rec.total[k].pokok;
+      out[k].sanksi+=rec.total[k].sanksi; out[k].jumlah+=rec.total[k].jumlah;
+    });
+  });
+  return out;
+}
+// cumulative value up to (tahun,bulan): use latest record with bulan<=target, its sd_bulan_ini
+function cumulativeTotal(kategori, uppdSlug, tahun, bulan){
+  const recs = pd05Records(kategori, uppdSlug).filter(r=>r.tahun===tahun && r.bulan<=bulan);
+  if(recs.length===0) return null;
+  if(uppdSlug==='__ALL__'){
+    // aggregate: for each uppd present, take its own latest record <= bulan, then sum
+    const bySlug = {};
+    recs.forEach(r=>{ if(!bySlug[r.uppdSlug] || r.bulan>bySlug[r.uppdSlug].bulan) bySlug[r.uppdSlug]=r; });
+    return sumBlocks(Object.values(bySlug)).sd_bulan_ini;
+  }
+  const latest = recs.reduce((a,b)=> b.bulan>a.bulan?b:a);
+  return latest.total.sd_bulan_ini;
+}
+function monthlyTotal(kategori, uppdSlug, tahun, bulan){
+  const recs = pd05Records(kategori, uppdSlug).filter(r=>r.tahun===tahun && r.bulan===bulan);
+  if(recs.length===0) return null;
+  return sumBlocks(recs).bulan_ini_total;
+}
+// Opsen realisasi at 35-entity granularity (aggregating raw 37-UPPD slugs where needed)
+function opsenCumulativeTotal(entitySlug, tahun, bulan){
+  if(entitySlug==='__ALL__') return cumulativeTotal('opsen','__ALL__',tahun,bulan);
+  const rawSlugs = rawUppdSlugsForOpsenEntity(entitySlug);
+  const bySlug = {};
+  rawSlugs.forEach(slug=>{
+    const recs = pd05Records('opsen', slug).filter(r=>r.tahun===tahun && r.bulan<=bulan);
+    if(recs.length) bySlug[slug] = recs.reduce((a,b)=> b.bulan>a.bulan?b:a);
+  });
+  const list = Object.values(bySlug);
+  if(list.length===0) return null;
+  return sumBlocks(list).sd_bulan_ini;
+}
+function opsenMonthlyTotal(entitySlug, tahun, bulan){
+  if(entitySlug==='__ALL__') return monthlyTotal('opsen','__ALL__',tahun,bulan);
+  const rawSlugs = rawUppdSlugsForOpsenEntity(entitySlug);
+  const recs = [];
+  rawSlugs.forEach(slug=> recs.push(...pd05Records('opsen', slug).filter(r=>r.tahun===tahun && r.bulan===bulan)));
+  if(recs.length===0) return null;
+  return sumBlocks(recs).bulan_ini_total;
+}
+function opsenRealisasi(entitySlug, tahun, bulan, mode){
+  const rec = mode==='kumulatif' ? opsenCumulativeTotal(entitySlug,tahun,bulan) : opsenMonthlyTotal(entitySlug,tahun,bulan);
+  return rec ? rec.pokok : null;
+}
+function komponenRecords(uppdSlug){ return DB.komponen.filter(r=> uppdSlug==='__ALL__' || r.uppdSlug===uppdSlug); }
+function komponenCategorySums(uppdSlug, tahun, bulanFrom, bulanTo){
+  const recs = komponenRecords(uppdSlug).filter(r=>r.tahun===tahun && r.bulan>=bulanFrom && r.bulan<=bulanTo);
+  const cats = {piutang:0, tahun_jalan:0, extracomptable:0, kendaraan_baru:0, mutasi_masuk:0, lainnya:0};
+  recs.forEach(rec=>{
+    const t = rec.total ? rec.total.pengurangan : null;
+    if(!t) return;
+    cats.piutang += t.pembayaran_piutang_lalu.rp;
+    cats.tahun_jalan += t.pembayaran_jatuh_tempo.rp + t.pembayaran_sebelum_jatuh_tempo.rp;
+    cats.extracomptable += t.pembayaran_dihapusbuku.rp;
+    cats.kendaraan_baru += t.pembayaran_kendaraan_baru.rp;
+    cats.mutasi_masuk += t.pembayaran_mutasi_luar_provinsi.rp;
+    cats.lainnya += t.penyesuaian_nilai.rp + t.penghapusan.rp;
+  });
+  return cats;
+}
+const KOMPONEN_CATS = ['piutang','tahun_jalan','extracomptable','kendaraan_baru','mutasi_masuk','lainnya'];
+const KOMPONEN_LABELS = {
+  piutang:'Piutang (Piutang Lalu)', tahun_jalan:'Tahun Jalan (Jatuh Tempo)', extracomptable:'Extracomptable (Dihapusbuku)',
+  kendaraan_baru:'Kendaraan Baru', mutasi_masuk:'Mutasi Masuk', lainnya:'Lainnya',
+};
+// Proyeksi per komponen per bulan: bulan dengan data -> aktual; bulan tanpa data -> rata2 harian (dari bulan
+// yang sudah terealisasi tahun berjalan) x hari kerja bulan tsb, dengan penyesuaian % opsional.
+function komponenProjection(uppdSlug, tahun, adjustPct){
+  let sumPerCat={}; KOMPONEN_CATS.forEach(k=>sumPerCat[k]=0);
+  let sumHari=0, anyActual=false;
+  const monthly = [];
+  for(let m=1;m<=12;m++){
+    const hasData = komponenRecords(uppdSlug).some(r=>r.tahun===tahun && r.bulan===m);
+    const hari = workingDaysInMonth(tahun,m);
+    if(hasData){
+      const cats = komponenCategorySums(uppdSlug,tahun,m,m);
+      KOMPONEN_CATS.forEach(k=> sumPerCat[k]+=cats[k]);
+      sumHari += hari; anyActual = true;
+      monthly.push({bulan:m, hari, cats, status:'aktual'});
+    } else {
+      monthly.push({bulan:m, hari, cats:null, status:'proyeksi'});
+    }
+  }
+  const rataHarian = {}; KOMPONEN_CATS.forEach(k=> rataHarian[k] = (anyActual && sumHari>0) ? sumPerCat[k]/sumHari : 0);
+  monthly.forEach(row=>{
+    if(row.status==='proyeksi'){
+      const cats = {}; KOMPONEN_CATS.forEach(k=> cats[k] = rataHarian[k]*row.hari*(1+ (adjustPct||0)/100));
+      row.cats = cats;
+    }
+    row.total = KOMPONEN_CATS.reduce((a,k)=>a+row.cats[k],0);
+  });
+  const totalAktual = monthly.filter(r=>r.status==='aktual').reduce((a,r)=>a+r.total,0);
+  const totalProyeksi = monthly.filter(r=>r.status==='proyeksi').reduce((a,r)=>a+r.total,0);
+  return {monthly, rataHarian, sumHari, anyActual, totalAktual, totalProyeksi, totalSetahun: totalAktual+totalProyeksi};
+}
+
+/* ---------- BBNKB query helpers ---------- */
+// Catatan: file PD.06 BBNKB tidak punya kolom "kumulatif Jan-Des" yang bisa dipercaya (kolom
+// "S.D. BULAN INI" di file itu mencampur saldo piutang lama, bukan murni realisasi tahun berjalan).
+// Jadi realisasi kumulatif dihitung sendiri di sini: jumlah PENERIMAAN bulanan dari tiap bulan yang
+// sudah diupload tahun tsb (Jan..bulan terpilih) — bukan dari kolom "S.D. BULAN INI" file aslinya.
+function bbnkbRecords(uppdSlug){ return DB.bbnkb.filter(r=> uppdSlug==='__ALL__' || r.uppdSlug===uppdSlug); }
+function bbnkbMonthlyTotal(uppdSlug, tahun, bulan){
+  const recs = bbnkbRecords(uppdSlug).filter(r=>r.tahun===tahun && r.bulan===bulan && r.totalKeseluruhan);
+  if(recs.length===0) return null;
+  let obyek=0,pokok=0,sanksi=0;
+  recs.forEach(r=>{ obyek+=r.totalKeseluruhan.penerimaan.oby; pokok+=r.totalKeseluruhan.penerimaan.pokok; sanksi+=r.totalKeseluruhan.penerimaan.sanksi; });
+  return {obyek,pokok,sanksi};
+}
+function bbnkbCumulativeTotal(uppdSlug, tahun, bulan){
+  let obyek=0,pokok=0,sanksi=0,any=false;
+  for(let m=1;m<=bulan;m++){
+    const t = bbnkbMonthlyTotal(uppdSlug,tahun,m);
+    if(t){ obyek+=t.obyek; pokok+=t.pokok; sanksi+=t.sanksi; any=true; }
+  }
+  return any? {obyek,pokok,sanksi} : null;
+}
+function bbnkbRealisasi(uppdSlug, tahun, bulan, mode){
+  const rec = mode==='kumulatif' ? bbnkbCumulativeTotal(uppdSlug,tahun,bulan) : bbnkbMonthlyTotal(uppdSlug,tahun,bulan);
+  return rec ? rec.pokok : null;
+}
+function bbnkbRealisasiField(uppdSlug, tahun, bulan, mode, field){
+  const rec = mode==='kumulatif' ? bbnkbCumulativeTotal(uppdSlug,tahun,bulan) : bbnkbMonthlyTotal(uppdSlug,tahun,bulan);
+  return rec ? rec[field] : null;
+}
+// Breakdown BBNKB Baru vs Non Baru (Pokok Penerimaan), kumulatif atau bulanan sesuai mode global
+function bbnkbBaruNonBaru(uppdSlug, tahun, bulan, mode){
+  const bulanFrom = mode==='kumulatif' ? 1 : bulan;
+  let baru=0, nonBaru=0, any=false;
+  for(let m=bulanFrom;m<=bulan;m++){
+    bbnkbRecords(uppdSlug).filter(r=>r.tahun===tahun && r.bulan===m).forEach(r=>{
+      if(r.totalBaru){ baru += r.totalBaru.penerimaan.pokok; any=true; }
+      if(r.totalNonBaru){ nonBaru += r.totalNonBaru.penerimaan.pokok; any=true; }
+    });
+  }
+  return any? {baru,nonBaru} : null;
+}
+// Breakdown per Roda (kode BBNKB cuma huruf tunggal A-K, tanpa sub-kode kepemilikan 1/2/4 —
+// jadi persentase Pribadi/Umum/Dinas TIDAK BISA dihitung dari file ini).
+function computeBbnkbVehicleBreakdown(){
+  const bulanFrom = state.mode==='kumulatif' ? 1 : state.bulan;
+  const itemsMap = {};
+  bbnkbRecords(state.uppd).filter(r=>r.tahun===state.tahun && r.bulan>=bulanFrom && r.bulan<=state.bulan).forEach(r=>{
+    r.items.forEach(it=>{ itemsMap[it.kode] = (itemsMap[it.kode]||0) + it.penerimaan.pokok; });
+  });
+  const roda = {RODA_2:0,RODA_3:0,RODA_4:0}; let total=0;
+  Object.entries(itemsMap).forEach(([kode,v])=>{
+    total += v;
+    const r = classifyRoda(kode); if(r) roda[r]+=v;
+  });
+  return {roda, total};
+}
+function targetBbnkbFor(uppdSlug, tahun){
+  if(uppdSlug==='__ALL__'){
+    let bbnkb=0, any=false;
+    Object.values(DB.targetsBbnkb).forEach(t=>{ if(t.tahun===tahun){ bbnkb+=t.targetBbnkb; any=true; } });
+    return any? bbnkb : null;
+  }
+  const t = DB.targetsBbnkb[uppdSlug+'_'+tahun];
+  return t? t.targetBbnkb : null;
+}
+
+function targetPkbFor(uppdSlug, tahun){
+  if(uppdSlug==='__ALL__'){
+    let pkb=0, any=false;
+    Object.values(DB.targetsPkb).forEach(t=>{ if(t.tahun===tahun){ pkb+=t.targetPkb; any=true; } });
+    return any? pkb : null;
+  }
+  const t = DB.targetsPkb[uppdSlug+'_'+tahun];
+  return t? t.targetPkb : null;
+}
+function targetOpsenFor(entitySlug, tahun){
+  if(entitySlug==='__ALL__'){
+    let opsen=0, any=false;
+    Object.values(DB.targetsOpsen).forEach(t=>{ if(t.tahun===tahun){ opsen+=t.targetOpsen; any=true; } });
+    return any? opsen : null;
+  }
+  const t = DB.targetsOpsen[entitySlug+'_'+tahun];
+  return t? t.targetOpsen : null;
+}
+function realisasi(kategori, uppdSlug, tahun, bulan, mode){
+  const rec = mode==='kumulatif' ? cumulativeTotal(kategori,uppdSlug,tahun,bulan) : monthlyTotal(kategori,uppdSlug,tahun,bulan);
+  return rec ? rec.pokok : null;
+}
+function targetForPeriode(targetTahunRp, tahun, bulan, mode){
+  if(targetTahunRp===null||targetTahunRp===undefined) return null;
+  const totalWD = totalWorkingDaysYear(tahun);
+  if(totalWD===0) return null;
+  const wd = mode==='kumulatif' ? workingDaysRange(tahun,1,bulan) : workingDaysInMonth(tahun,bulan);
+  return targetTahunRp * (wd/totalWD);
+}
+
+/* ---------- charts ---------- */
+function destroyChart(id){ if(charts[id]){ charts[id].destroy(); delete charts[id]; } }
+function makeChart(id, config){
+  destroyChart(id);
+  const ctx = document.getElementById(id);
+  if(!ctx) return;
+  charts[id] = new Chart(ctx, config);
+}
+const CHART_COLORS = ['#15385F','#1B8F82','#C99A2E','#B3372A','#6B7FA6','#8CBDB6'];
+
+/* ---------- render: layout ---------- */
+function renderTabs(){
+  const el = document.getElementById('tabs');
+  el.innerHTML = TABS.map(t=>`<button class="tab-btn ${state.tab===t.id?'active':''}" data-tab="${t.id}">${t.label}</button>`).join('');
+  el.querySelectorAll('.tab-btn').forEach(b=> b.onclick = ()=>{ state.tab=b.getAttribute('data-tab'); renderTabs(); renderTab(); });
+}
+function populateFilterOptions(){
+  const uppdSel = document.getElementById('f-uppd');
+  const curUppd = state.uppd;
+  const uppdOrderIndex = {}; UPPD_ORDER.forEach((n,i)=> uppdOrderIndex[uppdSlugOf(n)]=i);
+  const sortedUppdList = DB.uppdList.slice().sort((a,b)=>{
+    const ia = uppdOrderIndex[a.slug]; const ib = uppdOrderIndex[b.slug];
+    if(ia!==undefined && ib!==undefined) return ia-ib;
+    if(ia!==undefined) return -1;
+    if(ib!==undefined) return 1;
+    return a.name.localeCompare(b.name);
+  });
+  uppdSel.innerHTML = `<option value="__ALL__">Semua UPPD</option>` +
+    sortedUppdList.map(u=>`<option value="${u.slug}">${u.name}</option>`).join('');
+  uppdSel.value = [...uppdSel.options].some(o=>o.value===curUppd) ? curUppd : '__ALL__';
+  state.uppd = uppdSel.value;
+
+  const years = new Set();
+  [...DB.pd05, ...DB.komponen].forEach(r=>years.add(r.tahun));
+  Object.values(DB.targetsPkb).forEach(t=>years.add(t.tahun));
+  Object.values(DB.targetsOpsen).forEach(t=>years.add(t.tahun));
+  years.add(new Date().getFullYear());
+  const sortedYears = [...years].sort((a,b)=>b-a);
+  const tahunSel = document.getElementById('f-tahun');
+  const curTahun = state.tahun;
+  tahunSel.innerHTML = sortedYears.map(y=>`<option value="${y}">${y}</option>`).join('');
+  tahunSel.value = sortedYears.includes(curTahun) ? curTahun : sortedYears[0];
+  state.tahun = parseInt(tahunSel.value,10);
+
+  const bulanSel = document.getElementById('f-bulan');
+  bulanSel.innerHTML = MONTHS.map((m,i)=>`<option value="${i+1}">${m}</option>`).join('');
+  bulanSel.value = state.bulan;
+}
+function wireFilterEvents(){
+  document.getElementById('f-uppd').onchange = e=>{ state.uppd=e.target.value; renderTab(); };
+  document.getElementById('f-tahun').onchange = e=>{ state.tahun=parseInt(e.target.value,10); state.hariElapsedOverride=null; state.hariRemainOverride=null; renderTab(); };
+  document.getElementById('f-bulan').onchange = e=>{ state.bulan=parseInt(e.target.value,10); state.hariElapsedOverride=null; state.hariRemainOverride=null; renderTab(); };
+  document.getElementById('mode-kumulatif').onclick = ()=>{ state.mode='kumulatif'; syncModeButtons(); renderTab(); };
+  document.getElementById('mode-bulanan').onclick = ()=>{ state.mode='bulanan'; syncModeButtons(); renderTab(); };
+  document.getElementById('btn-upload').onclick = ()=> document.getElementById('fileInput').click();
+  document.getElementById('fileInput').onchange = e=>{ handleFiles(e.target.files); e.target.value=''; };
+  document.getElementById('btn-target').onclick = openTargetModal;
+  document.getElementById('btn-target-upload').onclick = ()=> document.getElementById('targetFileInput').click();
+  document.getElementById('targetFileInput').onchange = e=>{ handleTargetFile(e.target.files[0]); e.target.value=''; };
+  document.getElementById('btn-manage').onclick = openManageModal;
+}
+function syncModeButtons(){
+  document.getElementById('mode-kumulatif').classList.toggle('active', state.mode==='kumulatif');
+  document.getElementById('mode-bulanan').classList.toggle('active', state.mode==='bulanan');
+}
+
+function uppdLabel(){
+  if(state.uppd==='__ALL__') return 'Semua UPPD';
+  const u = DB.uppdList.find(x=>x.slug===state.uppd);
+  return u? u.name : state.uppd;
+}
+function periodeLabel(){
+  return state.mode==='kumulatif' ? `s.d. ${MONTHS[state.bulan-1]} ${state.tahun}` : `${MONTHS[state.bulan-1]} ${state.tahun}`;
+}
+
+/* ---------- render: tabs content ---------- */
+function renderTab(){
+  const c = document.getElementById('content');
+  const fns = {capaian:renderCapaian, komponen:renderKomponen, opsen:renderOpsenTab, capaian_bbnkb:renderCapaianBbnkb};
+  c.innerHTML='';
+  (fns[state.tab]||renderCapaian)(c);
+}
+
+function capaianBlockPkb(){
+  const targetTahun = targetPkbFor(state.uppd, state.tahun);
+  const real = realisasi('pkb', state.uppd, state.tahun, state.bulan, state.mode);
+  const pct = (real!==null && targetTahun) ? (real/targetTahun*100) : null;
+  const selisih = (real!==null && targetTahun!==null) ? (real-targetTahun) : null;
+  return {targetTahun, real, pct, selisih};
+}
+function capaianBlockOpsen(entitySlug){
+  const targetTahun = targetOpsenFor(entitySlug, state.tahun);
+  const real = opsenRealisasi(entitySlug, state.tahun, state.bulan, state.mode);
+  const pct = (real!==null && targetTahun) ? (real/targetTahun*100) : null;
+  const selisih = (real!==null && targetTahun!==null) ? (real-targetTahun) : null;
+  return {targetTahun, real, pct, selisih};
+}
+function capaianBlockBbnkb(){
+  const targetTahun = targetBbnkbFor(state.uppd, state.tahun);
+  const real = bbnkbRealisasi(state.uppd, state.tahun, state.bulan, state.mode);
+  const pct = (real!==null && targetTahun) ? (real/targetTahun*100) : null;
+  const selisih = (real!==null && targetTahun!==null) ? (real-targetTahun) : null;
+  return {targetTahun, real, pct, selisih};
+}
+function stampHtml(pct){
+  const val = pct===null? '–' : fmtPct(pct,1);
+  return `<div class="stamp"><span class="pct mono">${val}</span><span class="lbl">CAPAIAN</span></div>`;
+}
+/* ---------- shared: per-jenis kendaraan breakdown (Roda & Kepemilikan) ---------- */
+function computeVehicleBreakdown(){
+  const recs = pd05Records('pkb', state.uppd).filter(r=>r.tahun===state.tahun && (state.mode==='kumulatif'? r.bulan<=state.bulan : r.bulan===state.bulan));
+  let itemsMap = {}; // kode -> pokok
+  if(state.mode==='kumulatif'){
+    const bySlug={};
+    recs.forEach(r=>{ if(!bySlug[r.uppdSlug]||r.bulan>bySlug[r.uppdSlug].bulan) bySlug[r.uppdSlug]=r; });
+    Object.values(bySlug).forEach(r=> r.items.forEach(it=>{ itemsMap[it.kode]=(itemsMap[it.kode]||0)+it.sd_bulan_ini.pokok; }));
+  } else {
+    recs.forEach(r=> r.items.forEach(it=>{ itemsMap[it.kode]=(itemsMap[it.kode]||0)+it.bulan_ini_total.pokok; }));
+  }
+  const roda = {RODA_2:0,RODA_3:0,RODA_4:0};
+  const kepemilikan = {PRIBADI:0,UMUM:0,DINAS:0};
+  let total=0;
+  Object.entries(itemsMap).forEach(([kode,v])=>{
+    total += v;
+    const r = classifyRoda(kode); if(r) roda[r]+=v;
+    const k = classifyKepemilikan(kode); if(k) kepemilikan[k]+=v;
+  });
+  return {roda, kepemilikan, total};
+}
+function realisasiField(kategori, uppdSlug, tahun, bulan, mode, field){
+  const rec = mode==='kumulatif' ? cumulativeTotal(kategori,uppdSlug,tahun,bulan) : monthlyTotal(kategori,uppdSlug,tahun,bulan);
+  return rec ? rec[field] : null;
+}
+
+/* ---------- Tab 1: Capaian PKB (gabungan: tren, capaian, sub-capaian) ---------- */
+function renderCapaian(c){
+  const d = capaianBlockPkb();
+
+  // -- e-samsat share --
+  const esamsatRec = state.mode==='kumulatif'? cumulativeTotal('esamsat', state.uppd, state.tahun, state.bulan) : monthlyTotal('esamsat', state.uppd, state.tahun, state.bulan);
+  const pkbRec = state.mode==='kumulatif'? cumulativeTotal('pkb', state.uppd, state.tahun, state.bulan) : monthlyTotal('pkb', state.uppd, state.tahun, state.bulan);
+  const esamsatShare = (esamsatRec && pkbRec && pkbRec.pokok>0) ? (esamsatRec.pokok/pkbRec.pokok*100) : null;
+
+  // -- growth yoy (pokok & objek) --
+  const realKum = realisasi('pkb', state.uppd, state.tahun, state.bulan, 'kumulatif');
+  const realKumPrev = realisasi('pkb', state.uppd, state.tahun-1, state.bulan, 'kumulatif');
+  const growthPokok = (realKum!==null && realKumPrev) ? ((realKum-realKumPrev)/realKumPrev*100) : null;
+  const objekKum = realisasiField('pkb', state.uppd, state.tahun, state.bulan, 'kumulatif', 'obyek');
+  const objekKumPrev = realisasiField('pkb', state.uppd, state.tahun-1, state.bulan, 'kumulatif', 'obyek');
+  const growthObjek = (objekKum!==null && objekKumPrev) ? ((objekKum-objekKumPrev)/objekKumPrev*100) : null;
+
+  // -- rata-rata harian (jumlah hari input manual, default dari hari kerja Senin-Sabtu) --
+  const hariElapsedDefault = workingDaysRange(state.tahun,1,state.bulan);
+  const hariRemainDefault = workingDaysRange(state.tahun, state.bulan+1, 12);
+  const hariElapsed = state.hariElapsedOverride!==null ? state.hariElapsedOverride : hariElapsedDefault;
+  const hariRemain = state.hariRemainOverride!==null ? state.hariRemainOverride : hariRemainDefault;
+  const rataHarian = (realKum!==null && hariElapsed>0) ? realKum/hariElapsed : null;
+  const sisaTarget = (d.targetTahun!==null && realKum!==null) ? (d.targetTahun-realKum) : null;
+  const rataHarianDibutuhkan = (sisaTarget!==null && hariRemain>0) ? sisaTarget/hariRemain : null;
+
+  // -- vehicle breakdown --
+  const vb = computeVehicleBreakdown();
+  const rodaRows = ['RODA_2','RODA_3','RODA_4'].map(k=>({key:k,label:RODA_LABEL[k],val:vb.roda[k],pct: vb.total>0? vb.roda[k]/vb.total*100 : null}));
+  const kepRows = ['PRIBADI','UMUM','DINAS'].map(k=>({key:k,label:KEPEMILIKAN_LABEL[k],val:vb.kepemilikan[k],pct: vb.total>0? vb.kepemilikan[k]/vb.total*100 : null}));
+
+  // -- ranking 37 UPPD: capaian & growth --
+  const rankRows = UPPD_MASTER.map(u=>{
+    const real = realisasi('pkb', u.slug, state.tahun, state.bulan, state.mode);
+    const target = targetPkbFor(u.slug, state.tahun);
+    const pct = (real!==null && target) ? real/target*100 : null;
+    const realPrev = realisasi('pkb', u.slug, state.tahun-1, state.bulan, state.mode);
+    const growth = (real!==null && realPrev) ? (real-realPrev)/realPrev*100 : null;
+    return {name:u.canonical, real, pct, growth};
+  });
+  const rankByCapaian = rankRows.filter(r=>r.pct!==null).sort((a,b)=>b.pct-a.pct);
+  const rankByGrowth = rankRows.filter(r=>r.growth!==null).sort((a,b)=>b.growth-a.growth);
+
+  // -- tren 3 tahun --
+  const trenYears = [state.tahun-2, state.tahun-1, state.tahun];
+  const trenDatasets = trenYears.map((y,idx)=>{
+    const data = [];
+    for(let m=1;m<=12;m++){ const r = monthlyTotal('pkb', state.uppd, y, m); data.push(r? r.pokok : null); }
+    return {label:String(y), data, borderColor:CHART_COLORS[idx], backgroundColor:CHART_COLORS[idx], tension:.25, spanGaps:true};
+  });
+  const trenHasData = trenDatasets.some(ds=>ds.data.some(v=>v!==null));
+
+  c.innerHTML = `
+    <div class="section-title">Tren Bulanan PKB — 3 Tahun Terakhir — ${uppdLabel()}</div>
+    <p class="section-desc">Realisasi Pokok per bulan, dibandingkan ${trenYears.join(' / ')}.</p>
+    ${!trenHasData? `<div class="empty">Belum ada data yang cukup untuk membuat tren. Upload data beberapa bulan/tahun terlebih dahulu.</div>` :
+    `<div class="card"><div class="chart-box"><canvas id="chart-tren"></canvas></div></div>`}
+
+    <div class="section-title">Capaian PKB — ${uppdLabel()}</div>
+    <p class="section-desc">Target &amp; realisasi Pokok PKB, ${periodeLabel()}.</p>
+    ${d.targetTahun===null? `<div class="empty">Belum ada <b>target PKB</b> untuk ${uppdLabel()} tahun ${state.tahun}. Klik <b>Atur Target</b> di atas.</div>` : ''}
+    <div class="card" style="margin-top:14px;">
+      <div class="stamp-wrap">
+        ${stampHtml(d.pct)}
+        <div class="grid grid-2" style="flex:1;gap:10px;">
+          <div><div class="kpi-label">Target Tahunan</div><div class="kpi-value mono" style="font-size:16px;">${fmtRp(d.targetTahun)}</div></div>
+          <div><div class="kpi-label">Realisasi (Pokok)</div><div class="kpi-value mono" style="font-size:16px;">${d.real===null?'– belum ada data':fmtRp(d.real)}</div></div>
+          <div><div class="kpi-label">Selisih thd Target Tahunan</div><div class="kpi-value mono ${d.selisih===null?'':(d.selisih>=0?'pos':'neg')}" style="font-size:16px;">${d.selisih===null?'–':fmtRp(d.selisih)}</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-title">Sub Capaian PKB</div>
+    <p class="section-desc">Indikator turunan capaian PKB, ${periodeLabel()}.</p>
+    <div class="grid grid-4">
+      <div class="card"><div class="kpi-label">% Growth YoY (Pokok)</div><div class="kpi-value ${growthPokok===null?'':(growthPokok>=0?'pos':'neg')}">${growthPokok===null?'– data thn lalu belum ada':fmtPct(growthPokok)}</div>
+        <div class="kpi-sub">vs ${state.tahun-1}, s.d. bulan sama</div></div>
+      <div class="card"><div class="kpi-label">% Growth YoY (Obyek)</div><div class="kpi-value ${growthObjek===null?'':(growthObjek>=0?'pos':'neg')}">${growthObjek===null?'– data thn lalu belum ada':fmtPct(growthObjek)}</div>
+        <div class="kpi-sub">vs ${state.tahun-1}, s.d. bulan sama</div></div>
+      <div class="card"><div class="kpi-label">E-Samsat thd Total Realisasi</div><div class="kpi-value">${esamsatShare===null?'–':fmtPct(esamsatShare)}</div>
+        <div class="kpi-sub">${esamsatRec? fmtRp(esamsatRec.pokok) : 'belum ada data e-samsat'}</div></div>
+      <div class="card"><div class="kpi-label">Total Realisasi (utk breakdown)</div><div class="kpi-value mono" style="font-size:16px;">${vb.total>0?fmtRp(vb.total):'–'}</div>
+        <div class="kpi-sub">dasar persentase roda &amp; kepemilikan</div></div>
+    </div>
+
+    <div class="card" style="margin-top:14px;">
+      <div class="kpi-label" style="margin-bottom:10px;">Rata-rata Harian (jumlah hari dapat diubah manual)</div>
+      <div class="grid grid-4" style="gap:10px;">
+        <div class="field" style="margin-bottom:0;"><label>Hari berjalan</label><input type="number" id="in-hari-elapsed" value="${hariElapsed}" min="0"></div>
+        <div><div class="kpi-label">Rata-rata Harian</div><div class="kpi-value mono" style="font-size:16px;">${rataHarian===null?'–':fmtRpShort(rataHarian)}</div>
+          <div class="kpi-sub">realisasi ÷ ${hariElapsed} hari</div></div>
+        <div class="field" style="margin-bottom:0;"><label>Hari tersisa</label><input type="number" id="in-hari-remain" value="${hariRemain}" min="0"></div>
+        <div><div class="kpi-label">Rata-rata Harian Dibutuhkan</div><div class="kpi-value mono ${rataHarianDibutuhkan!==null&&rataHarian!==null&&rataHarianDibutuhkan>rataHarian?'neg':'pos'}" style="font-size:16px;">${rataHarianDibutuhkan===null?'–':fmtRpShort(rataHarianDibutuhkan)}</div>
+          <div class="kpi-sub">agar target tahunan tercapai</div></div>
+      </div>
+      <div class="footnote">Default hari kerja dihitung Senin–Sabtu; dapat ditimpa manual sesuai kebutuhan.</div>
+    </div>
+
+    <div class="grid grid-2" style="margin-top:14px;">
+      <div class="card">
+        <div class="kpi-label" style="margin-bottom:10px;">Per Jenis — Roda</div>
+        ${vb.total===0? `<div class="empty">Belum ada data untuk periode ini.</div>` : rodaRows.map(r=>`
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line-soft);">
+            <span style="color:var(--navy-700);flex:0 0 auto;">${VEHICLE_ICONS[r.key]}</span>
+            <span style="flex:1;font-size:13px;">${r.label}</span>
+            <span class="mono" style="font-weight:600;">${r.pct===null?'–':fmtPct(r.pct)}</span>
+          </div>`).join('')}
+      </div>
+      <div class="card">
+        <div class="kpi-label" style="margin-bottom:10px;">Per Kepemilikan</div>
+        ${vb.total===0? `<div class="empty">Belum ada data untuk periode ini.</div>` : kepRows.map(r=>`
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line-soft);">
+            <span style="flex:1;font-size:13px;">${r.label}</span>
+            <span class="mono" style="font-weight:600;">${r.pct===null?'–':fmtPct(r.pct)}</span>
+          </div>`).join('')}
+      </div>
+    </div>
+    <div class="footnote">Klasifikasi Roda: kode A1–I4 = Roda 4, J* = Roda 2, K* = Roda 3. Klasifikasi Kepemilikan: akhiran 1 = Pribadi, akhiran 2 = Umum, akhiran 4 = Dinas.</div>
+
+    <div class="section-title">Ranking UPPD — PKB</div>
+    <p class="section-desc">Diurutkan berdasarkan persentase capaian dan pertumbuhan (YoY) realisasi Pokok, ${periodeLabel()}.</p>
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="kpi-label" style="margin-bottom:8px;">Ranking berdasarkan Capaian</div>
+        ${rankByCapaian.length===0?'<div class="empty">Belum ada UPPD dengan target &amp; realisasi lengkap.</div>':
+        `<table><thead><tr><th>#</th><th>UPPD</th><th class="right">% Capaian</th></tr></thead>
+        <tbody>${rankByCapaian.map((r,i)=>`<tr><td>${i+1}</td><td>${r.name}</td><td class="right ${r.pct>=100?'pos':''}">${fmtPct(r.pct)}</td></tr>`).join('')}</tbody></table>`}
+      </div>
+      <div class="card">
+        <div class="kpi-label" style="margin-bottom:8px;">Ranking berdasarkan Growth (YoY)</div>
+        ${rankByGrowth.length===0?'<div class="empty">Data tahun sebelumnya belum tersedia untuk perbandingan.</div>':
+        `<table><thead><tr><th>#</th><th>UPPD</th><th class="right">% Growth</th></tr></thead>
+        <tbody>${rankByGrowth.map((r,i)=>`<tr><td>${i+1}</td><td>${r.name}</td><td class="right ${r.growth>=0?'pos':'neg'}">${fmtPct(r.growth)}</td></tr>`).join('')}</tbody></table>`}
+      </div>
+    </div>
+  `;
+  if(trenHasData){
+    makeChart('chart-tren', {type:'line', data:{labels:MONTHS_SHORT, datasets:trenDatasets}, options:{responsive:true,maintainAspectRatio:false,
+      scales:{y:{ticks:{callback:v=>fmtRpShort(v)}}}}});
+  }
+  const inElapsed = document.getElementById('in-hari-elapsed');
+  const inRemain = document.getElementById('in-hari-remain');
+  if(inElapsed) inElapsed.onchange = e=>{ const v=parseInt(e.target.value,10); state.hariElapsedOverride = isNaN(v)?null:v; renderTab(); };
+  if(inRemain) inRemain.onchange = e=>{ const v=parseInt(e.target.value,10); state.hariRemainOverride = isNaN(v)?null:v; renderTab(); };
+}
+
+/* ---------- Tab: Capaian BBNKB (37 UPPD, tren, capaian, sub capaian, ranking) ---------- */
+function renderCapaianBbnkb(c){
+  const d = capaianBlockBbnkb();
+
+  // -- growth yoy (pokok & objek) --
+  const realKum = bbnkbRealisasi(state.uppd, state.tahun, state.bulan, 'kumulatif');
+  const realKumPrev = bbnkbRealisasi(state.uppd, state.tahun-1, state.bulan, 'kumulatif');
+  const growthPokok = (realKum!==null && realKumPrev) ? ((realKum-realKumPrev)/realKumPrev*100) : null;
+  const objekKum = bbnkbRealisasiField(state.uppd, state.tahun, state.bulan, 'kumulatif', 'obyek');
+  const objekKumPrev = bbnkbRealisasiField(state.uppd, state.tahun-1, state.bulan, 'kumulatif', 'obyek');
+  const growthObjek = (objekKum!==null && objekKumPrev) ? ((objekKum-objekKumPrev)/objekKumPrev*100) : null;
+
+  // -- rata-rata harian (pakai override jumlah hari yang sama dengan tab Capaian PKB) --
+  const hariElapsedDefault = workingDaysRange(state.tahun,1,state.bulan);
+  const hariRemainDefault = workingDaysRange(state.tahun, state.bulan+1, 12);
+  const hariElapsed = state.hariElapsedOverride!==null ? state.hariElapsedOverride : hariElapsedDefault;
+  const hariRemain = state.hariRemainOverride!==null ? state.hariRemainOverride : hariRemainDefault;
+  const rataHarian = (realKum!==null && hariElapsed>0) ? realKum/hariElapsed : null;
+  const sisaTarget = (d.targetTahun!==null && realKum!==null) ? (d.targetTahun-realKum) : null;
+  const rataHarianDibutuhkan = (sisaTarget!==null && hariRemain>0) ? sisaTarget/hariRemain : null;
+
+  // -- BBNKB Baru vs Non Baru --
+  const bn = bbnkbBaruNonBaru(state.uppd, state.tahun, state.bulan, state.mode);
+  const bnTotal = bn ? (bn.baru+bn.nonBaru) : 0;
+
+  // -- vehicle breakdown (roda saja; BBNKB tidak punya sub-kode kepemilikan) --
+  const vb = computeBbnkbVehicleBreakdown();
+  const rodaRows = ['RODA_2','RODA_3','RODA_4'].map(k=>({key:k,label:RODA_LABEL[k],val:vb.roda[k],pct: vb.total>0? vb.roda[k]/vb.total*100 : null}));
+
+  // -- tren 3 tahun --
+  const trenYears = [state.tahun-2, state.tahun-1, state.tahun];
+  const trenDatasets = trenYears.map((y,idx)=>{
+    const data = [];
+    for(let m=1;m<=12;m++){ const r = bbnkbMonthlyTotal(state.uppd, y, m); data.push(r? r.pokok : null); }
+    return {label:String(y), data, borderColor:CHART_COLORS[idx], backgroundColor:CHART_COLORS[idx], tension:.25, spanGaps:true};
+  });
+  const trenHasData = trenDatasets.some(ds=>ds.data.some(v=>v!==null));
+
+  // -- ranking 37 UPPD --
+  const rankRows = UPPD_MASTER.map(u=>{
+    const real = bbnkbRealisasi(u.slug, state.tahun, state.bulan, state.mode);
+    const target = targetBbnkbFor(u.slug, state.tahun);
+    const pct = (real!==null && target) ? real/target*100 : null;
+    const realPrev = bbnkbRealisasi(u.slug, state.tahun-1, state.bulan, state.mode);
+    const growth = (real!==null && realPrev) ? (real-realPrev)/realPrev*100 : null;
+    return {name:u.canonical, real, pct, growth};
+  });
+  const rankByCapaian = rankRows.filter(r=>r.pct!==null).sort((a,b)=>b.pct-a.pct);
+  const rankByGrowth = rankRows.filter(r=>r.growth!==null).sort((a,b)=>b.growth-a.growth);
+
+  c.innerHTML = `
+    <div class="section-title">Tren Bulanan BBNKB — 3 Tahun Terakhir — ${uppdLabel()}</div>
+    <p class="section-desc">Realisasi Pokok (Penerimaan) per bulan, dibandingkan ${trenYears.join(' / ')}.</p>
+    ${!trenHasData? `<div class="empty">Belum ada data yang cukup untuk membuat tren. Upload data beberapa bulan/tahun terlebih dahulu.</div>` :
+    `<div class="card"><div class="chart-box"><canvas id="chart-tren-bbnkb"></canvas></div></div>`}
+
+    <div class="section-title">Capaian BBNKB — ${uppdLabel()}</div>
+    <p class="section-desc">Target &amp; realisasi Pokok BBNKB (kolom Penerimaan), ${periodeLabel()}.</p>
+    ${d.targetTahun===null? `<div class="empty">Belum ada <b>target BBNKB</b> untuk ${uppdLabel()} tahun ${state.tahun}. Klik <b>Atur Target</b> atau <b>Upload Target (Excel)</b> di atas.</div>` : ''}
+    <div class="card" style="margin-top:14px;">
+      <div class="stamp-wrap">
+        ${stampHtml(d.pct)}
+        <div class="grid grid-2" style="flex:1;gap:10px;">
+          <div><div class="kpi-label">Target Tahunan</div><div class="kpi-value mono" style="font-size:16px;">${fmtRp(d.targetTahun)}</div></div>
+          <div><div class="kpi-label">Realisasi (Pokok)</div><div class="kpi-value mono" style="font-size:16px;">${d.real===null?'– belum ada data':fmtRp(d.real)}</div></div>
+          <div><div class="kpi-label">Selisih thd Target Tahunan</div><div class="kpi-value mono ${d.selisih===null?'':(d.selisih>=0?'pos':'neg')}" style="font-size:16px;">${d.selisih===null?'–':fmtRp(d.selisih)}</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-title">Sub Capaian BBNKB</div>
+    <p class="section-desc">Indikator turunan capaian BBNKB, ${periodeLabel()}.</p>
+    <div class="grid grid-3">
+      <div class="card"><div class="kpi-label">% Growth YoY (Pokok)</div><div class="kpi-value ${growthPokok===null?'':(growthPokok>=0?'pos':'neg')}">${growthPokok===null?'– data thn lalu belum ada':fmtPct(growthPokok)}</div>
+        <div class="kpi-sub">vs ${state.tahun-1}, s.d. bulan sama</div></div>
+      <div class="card"><div class="kpi-label">% Growth YoY (Obyek)</div><div class="kpi-value ${growthObjek===null?'':(growthObjek>=0?'pos':'neg')}">${growthObjek===null?'– data thn lalu belum ada':fmtPct(growthObjek)}</div>
+        <div class="kpi-sub">vs ${state.tahun-1}, s.d. bulan sama</div></div>
+      <div class="card"><div class="kpi-label">Total Realisasi (utk breakdown)</div><div class="kpi-value mono" style="font-size:16px;">${vb.total>0?fmtRp(vb.total):'–'}</div>
+        <div class="kpi-sub">dasar persentase roda</div></div>
+    </div>
+
+    <div class="card" style="margin-top:14px;">
+      <div class="kpi-label" style="margin-bottom:10px;">Rata-rata Harian (jumlah hari dapat diubah manual — sama dengan tab Capaian PKB)</div>
+      <div class="grid grid-4" style="gap:10px;">
+        <div class="field" style="margin-bottom:0;"><label>Hari berjalan</label><input type="number" id="in-hari-elapsed-bbnkb" value="${hariElapsed}" min="0"></div>
+        <div><div class="kpi-label">Rata-rata Harian</div><div class="kpi-value mono" style="font-size:16px;">${rataHarian===null?'–':fmtRpShort(rataHarian)}</div>
+          <div class="kpi-sub">realisasi ÷ ${hariElapsed} hari</div></div>
+        <div class="field" style="margin-bottom:0;"><label>Hari tersisa</label><input type="number" id="in-hari-remain-bbnkb" value="${hariRemain}" min="0"></div>
+        <div><div class="kpi-label">Rata-rata Harian Dibutuhkan</div><div class="kpi-value mono ${rataHarianDibutuhkan!==null&&rataHarian!==null&&rataHarianDibutuhkan>rataHarian?'neg':'pos'}" style="font-size:16px;">${rataHarianDibutuhkan===null?'–':fmtRpShort(rataHarianDibutuhkan)}</div>
+          <div class="kpi-sub">agar target tahunan tercapai</div></div>
+      </div>
+    </div>
+
+    <div class="grid grid-2" style="margin-top:14px;">
+      <div class="card">
+        <div class="kpi-label" style="margin-bottom:10px;">BBNKB Baru vs Non Baru</div>
+        ${!bn? `<div class="empty">Belum ada data untuk periode ini.</div>` : `
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line-soft);">
+          <span style="flex:1;font-size:13px;">BBNKB Baru (kendaraan baru)</span>
+          <span class="mono" style="font-weight:600;">${fmtRp(bn.baru)}</span>
+          <span class="mono" style="width:56px;text-align:right;color:var(--ink-400);">${bnTotal>0?fmtPct(bn.baru/bnTotal*100):'–'}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 0;">
+          <span style="flex:1;font-size:13px;">BBNKB Non Baru (mutasi/balik nama)</span>
+          <span class="mono" style="font-weight:600;">${fmtRp(bn.nonBaru)}</span>
+          <span class="mono" style="width:56px;text-align:right;color:var(--ink-400);">${bnTotal>0?fmtPct(bn.nonBaru/bnTotal*100):'–'}</span>
+        </div>`}
+      </div>
+      <div class="card">
+        <div class="kpi-label" style="margin-bottom:10px;">Per Jenis — Roda</div>
+        ${vb.total===0? `<div class="empty">Belum ada data untuk periode ini.</div>` : rodaRows.map(r=>`
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line-soft);">
+            <span style="color:var(--navy-700);flex:0 0 auto;">${VEHICLE_ICONS[r.key]}</span>
+            <span style="flex:1;font-size:13px;">${r.label}</span>
+            <span class="mono" style="font-weight:600;">${r.pct===null?'–':fmtPct(r.pct)}</span>
+          </div>`).join('')}
+      </div>
+    </div>
+    <div class="footnote">Klasifikasi Roda: kode A–I = Roda 4, J = Roda 2, K = Roda 3. Berbeda dari PKB, file BBNKB tidak memiliki sub-kode kepemilikan (1/2/4), jadi persentase Pribadi/Umum/Dinas tidak tersedia untuk BBNKB.</div>
+
+    <div class="section-title">Ranking UPPD — BBNKB</div>
+    <p class="section-desc">Diurutkan berdasarkan persentase capaian dan pertumbuhan (YoY) realisasi Pokok, ${periodeLabel()}.</p>
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="kpi-label" style="margin-bottom:8px;">Ranking berdasarkan Capaian</div>
+        ${rankByCapaian.length===0?'<div class="empty">Belum ada UPPD dengan target &amp; realisasi lengkap.</div>':
+        `<table><thead><tr><th>#</th><th>UPPD</th><th class="right">% Capaian</th></tr></thead>
+        <tbody>${rankByCapaian.map((r,i)=>`<tr><td>${i+1}</td><td>${r.name}</td><td class="right ${r.pct>=100?'pos':''}">${fmtPct(r.pct)}</td></tr>`).join('')}</tbody></table>`}
+      </div>
+      <div class="card">
+        <div class="kpi-label" style="margin-bottom:8px;">Ranking berdasarkan Growth (YoY)</div>
+        ${rankByGrowth.length===0?'<div class="empty">Data tahun sebelumnya belum tersedia untuk perbandingan.</div>':
+        `<table><thead><tr><th>#</th><th>UPPD</th><th class="right">% Growth</th></tr></thead>
+        <tbody>${rankByGrowth.map((r,i)=>`<tr><td>${i+1}</td><td>${r.name}</td><td class="right ${r.growth>=0?'pos':'neg'}">${fmtPct(r.growth)}</td></tr>`).join('')}</tbody></table>`}
+      </div>
+    </div>
+  `;
+  if(trenHasData){
+    makeChart('chart-tren-bbnkb', {type:'line', data:{labels:MONTHS_SHORT, datasets:trenDatasets}, options:{responsive:true,maintainAspectRatio:false,
+      scales:{y:{ticks:{callback:v=>fmtRpShort(v)}}}}});
+  }
+  const inElapsed = document.getElementById('in-hari-elapsed-bbnkb');
+  const inRemain = document.getElementById('in-hari-remain-bbnkb');
+  if(inElapsed) inElapsed.onchange = e=>{ const v=parseInt(e.target.value,10); state.hariElapsedOverride = isNaN(v)?null:v; renderTab(); };
+  if(inRemain) inRemain.onchange = e=>{ const v=parseInt(e.target.value,10); state.hariRemainOverride = isNaN(v)?null:v; renderTab(); };
+}
+
+/* ---------- Tab 2: Opsen PKB (35 entitas, ranking, total diterima) ---------- */
+function renderOpsenTab(c){
+  const entitySlug = state.opsenEntity;
+  const d = capaianBlockOpsen(entitySlug);
+  const entityLabel = entitySlug==='__ALL__' ? 'Semua Kab/Kota' : (OPSEN_ENTITIES.find(e=>e.slug===entitySlug)||{}).canonical || entitySlug;
+
+  // total opsen diterima — selalu total seluruh 35 entitas, terlepas dari filter
+  const totalDiterima = opsenRealisasi('__ALL__', state.tahun, state.bulan, state.mode);
+
+  // ranking per entitas (35)
+  const rows = OPSEN_ENTITIES.map(e=>{
+    const real = opsenRealisasi(e.slug, state.tahun, state.bulan, state.mode);
+    const target = targetOpsenFor(e.slug, state.tahun);
+    const pct = (real!==null && target) ? real/target*100 : null;
+    const realPrev = opsenRealisasi(e.slug, state.tahun-1, state.bulan, state.mode);
+    const growth = (real!==null && realPrev) ? (real-realPrev)/realPrev*100 : null;
+    return {name:e.canonical, real, pct, growth};
+  });
+  const byCapaian = rows.filter(r=>r.pct!==null).sort((a,b)=>b.pct-a.pct);
+  const byGrowth = rows.filter(r=>r.growth!==null).sort((a,b)=>b.growth-a.growth);
+
+  const entityOptions = `<option value="__ALL__">Semua Kab/Kota</option>` + OPSEN_ENTITIES.map(e=>`<option value="${e.slug}" ${entitySlug===e.slug?'selected':''}>${e.canonical}</option>`).join('');
+
+  c.innerHTML = `
+    <div class="section-title">Opsen PKB — ${entityLabel}</div>
+    <p class="section-desc">Target &amp; realisasi Pokok Opsen PKB, ${periodeLabel()}. Granularitas 35 Kab/Kota (Kota Semarang I/II/III digabung).</p>
+    <div class="field" style="max-width:280px;margin-bottom:14px;"><label>Filter Kab/Kota (Opsen)</label>
+      <select id="f-opsen-entity">${entityOptions}</select>
+    </div>
+    ${d.targetTahun===null? `<div class="empty">Belum ada <b>target Opsen</b> untuk ${entityLabel} tahun ${state.tahun}. Klik <b>Atur Target</b> di atas.</div>` : ''}
+    <div class="card">
+      <div class="stamp-wrap">
+        ${stampHtml(d.pct)}
+        <div class="grid grid-2" style="flex:1;gap:10px;">
+          <div><div class="kpi-label">Target Tahunan</div><div class="kpi-value mono" style="font-size:16px;">${fmtRp(d.targetTahun)}</div></div>
+          <div><div class="kpi-label">Realisasi (Pokok)</div><div class="kpi-value mono" style="font-size:16px;">${d.real===null?'– belum ada data':fmtRp(d.real)}</div></div>
+          <div><div class="kpi-label">Selisih thd Target Tahunan</div><div class="kpi-value mono ${d.selisih===null?'':(d.selisih>=0?'pos':'neg')}" style="font-size:16px;">${d.selisih===null?'–':fmtRp(d.selisih)}</div></div>
+          <div><div class="kpi-label">Total Opsen Diterima (Seluruh Kab/Kota)</div><div class="kpi-value mono" style="font-size:16px;">${totalDiterima===null?'– belum ada data':fmtRp(totalDiterima)}</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-title">Ranking Kab/Kota — Opsen PKB</div>
+    <p class="section-desc">Diurutkan berdasarkan persentase capaian dan pertumbuhan (YoY) realisasi Pokok, ${periodeLabel()}.</p>
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="kpi-label" style="margin-bottom:8px;">Ranking berdasarkan Capaian</div>
+        ${byCapaian.length===0?'<div class="empty">Belum ada Kab/Kota dengan target &amp; realisasi lengkap.</div>':
+        `<table><thead><tr><th>#</th><th>Kab/Kota</th><th class="right">% Capaian</th></tr></thead>
+        <tbody>${byCapaian.map((r,i)=>`<tr><td>${i+1}</td><td>${r.name}</td><td class="right ${r.pct>=100?'pos':''}">${fmtPct(r.pct)}</td></tr>`).join('')}</tbody></table>`}
+      </div>
+      <div class="card">
+        <div class="kpi-label" style="margin-bottom:8px;">Ranking berdasarkan Growth (YoY)</div>
+        ${byGrowth.length===0?'<div class="empty">Data tahun sebelumnya belum tersedia untuk perbandingan.</div>':
+        `<table><thead><tr><th>#</th><th>Kab/Kota</th><th class="right">% Growth</th></tr></thead>
+        <tbody>${byGrowth.map((r,i)=>`<tr><td>${i+1}</td><td>${r.name}</td><td class="right ${r.growth>=0?'pos':'neg'}">${fmtPct(r.growth)}</td></tr>`).join('')}</tbody></table>`}
+      </div>
+    </div>
+    <div class="footnote">Realisasi diambil dari file berawalan "OPSEN_" yang diupload. Struktur file identik dengan PD.05 PKB reguler.</div>
+  `;
+  const sel = document.getElementById('f-opsen-entity');
+  if(sel) sel.onchange = e=>{ state.opsenEntity = e.target.value; renderTab(); };
+}
+
+function renderKomponen(c){
+  if(state.uppd==='__ALL__'){
+    c.innerHTML = `
+      <div class="section-title">Pembayaran PKB per Komponen</div>
+      <div class="empty">Pilih satu UPPD terlebih dahulu di filter atas — proyeksi rata-rata harian dihitung per UPPD (hari kerja &amp; pola pembayaran tiap UPPD berbeda).</div>`;
+    return;
+  }
+  const proj = komponenProjection(state.uppd, state.tahun, state.komponenAdjustPct);
+  const totalPerCat = {}; KOMPONEN_CATS.forEach(k=> totalPerCat[k] = proj.monthly.reduce((a,r)=>a+r.cats[k],0));
+  const presets = [-10,-5,0,5,10,15,20];
+
+  c.innerHTML = `
+    <div class="section-title">Pembayaran PKB per Komponen — ${uppdLabel()}</div>
+    <p class="section-desc">Rincian per bulan, tahun ${state.tahun}. Bulan yang sudah ada data laporan Kertas Kerja Piutang ditandai <b>Aktual</b>; bulan yang belum diisi otomatis diisi <b>Proyeksi</b> = rata-rata harian (dari bulan aktual tahun ini) × jumlah hari kerja bulan tsb.</p>
+
+    <div class="card">
+      <div class="kpi-label" style="margin-bottom:8px;">Penyesuaian Proyeksi</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+        ${presets.map(p=>`<button class="btn ${state.komponenAdjustPct===p?'btn-primary':'btn-secondary'}" data-preset="${p}" style="padding:7px 12px;">${p>0?'+':''}${p}%</button>`).join('')}
+        <span style="font-size:12.5px;color:var(--ink-600);margin-left:6px;">atau custom:</span>
+        <input type="number" id="in-komponen-adjust" value="${state.komponenAdjustPct}" style="width:80px;padding:7px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px;" step="1">
+        <span style="font-size:12.5px;color:var(--ink-600);">%</span>
+      </div>
+      <div class="footnote">Penyesuaian hanya berlaku untuk bulan berstatus Proyeksi (tidak mengubah bulan Aktual). Rata-rata harian dasar: ${proj.anyActual? fmtRpShort(Object.values(proj.rataHarian).reduce((a,b)=>a+b,0))+' / hari kerja' : 'belum ada bulan aktual tahun ini'}.</div>
+    </div>
+
+    <div class="grid grid-2" style="margin-top:14px;">
+      <div class="card"><div class="kpi-label">Total Aktual (bulan yang sudah ada data)</div><div class="kpi-value mono" style="font-size:17px;">${fmtRp(proj.totalAktual)}</div></div>
+      <div class="card"><div class="kpi-label">Total Proyeksi (bulan yang belum ada data)</div><div class="kpi-value mono" style="font-size:17px;">${fmtRp(proj.totalProyeksi)}</div>
+        <div class="kpi-sub">dengan penyesuaian ${state.komponenAdjustPct>0?'+':''}${state.komponenAdjustPct}%</div></div>
+    </div>
+
+    <div class="grid grid-2" style="margin-top:14px;">
+      <div class="card"><div class="chart-box"><canvas id="chart-komponen"></canvas></div></div>
+      <div class="card">
+        <div class="kpi-label" style="margin-bottom:8px;">Komposisi Setahun (Aktual + Proyeksi)</div>
+        <table><thead><tr><th>Komponen</th><th class="right">Rp</th><th class="right">%</th></tr></thead>
+        <tbody>${KOMPONEN_CATS.map(k=>`<tr><td>${KOMPONEN_LABELS[k]}</td><td class="right mono">${fmtRp(totalPerCat[k])}</td><td class="right">${proj.totalSetahun>0?fmtPct(totalPerCat[k]/proj.totalSetahun*100):'–'}</td></tr>`).join('')}
+        <tr><td><b>Total</b></td><td class="right mono"><b>${fmtRp(proj.totalSetahun)}</b></td><td class="right">100%</td></tr></tbody></table>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px;">
+      <div class="kpi-label" style="margin-bottom:10px;">Rincian per Bulan</div>
+      <div style="max-height:420px;overflow:auto;">
+      <table><thead><tr><th>Bulan</th><th>Status</th>${KOMPONEN_CATS.map(k=>`<th class="right">${KOMPONEN_LABELS[k]}</th>`).join('')}<th class="right">Total</th></tr></thead>
+      <tbody>${proj.monthly.map(row=>`
+        <tr>
+          <td>${MONTHS[row.bulan-1]}</td>
+          <td><span class="badge ${row.status==='aktual'?'badge-pkb':'badge-esamsat'}">${row.status==='aktual'?'Aktual':'Proyeksi'}</span></td>
+          ${KOMPONEN_CATS.map(k=>`<td class="right mono">${fmtRp(row.cats[k])}</td>`).join('')}
+          <td class="right mono"><b>${fmtRp(row.total)}</b></td>
+        </tr>`).join('')}
+      </tbody></table>
+      </div>
+    </div>
+    <div class="footnote">Hari kerja dihitung Senin–Sabtu. Rata-rata harian dihitung ulang otomatis setiap ada bulan baru yang terealisasi.</div>
+  `;
+  makeChart('chart-komponen', {type:'doughnut', data:{labels:KOMPONEN_CATS.map(k=>KOMPONEN_LABELS[k]), datasets:[{data:KOMPONEN_CATS.map(k=>totalPerCat[k]), backgroundColor:CHART_COLORS}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:11}}}}}});
+
+  c.querySelectorAll('[data-preset]').forEach(btn=>{
+    btn.onclick = ()=>{ state.komponenAdjustPct = parseFloat(btn.getAttribute('data-preset')); renderTab(); };
+  });
+  const inAdjust = document.getElementById('in-komponen-adjust');
+  if(inAdjust) inAdjust.onchange = e=>{ const v=parseFloat(e.target.value); state.komponenAdjustPct = isNaN(v)?0:v; renderTab(); };
+}
+
+/* ---------- init ---------- */
+async function init(){
+  populateFilterOptionsPlaceholder();
+  await loadAllFromStorage();
+  populateFilterOptions();
+  wireFilterEvents();
+  renderTabs();
+  renderTab();
+}
+function populateFilterOptionsPlaceholder(){
+  document.getElementById('f-uppd').innerHTML = `<option value="__ALL__">Semua UPPD</option>`;
+  document.getElementById('f-tahun').innerHTML = `<option>${state.tahun}</option>`;
+  document.getElementById('f-bulan').innerHTML = MONTHS.map((m,i)=>`<option value="${i+1}">${m}</option>`).join('');
+}
+
+/* ---------- auth gate (hanya dipakai saat mode Firebase) ---------- */
+function renderLoginOverlay(){
+  const el = document.getElementById('loginOverlay');
+  el.className = 'login-overlay';
+  el.style.display = 'flex';
+  el.innerHTML = `
+    <div class="login-card">
+      <h2>Analitik Data Pajak Daerah</h2>
+      <p>Masuk dengan akun Google instansi untuk mengakses data Bapenda Provinsi Jawa Tengah.</p>
+      <button class="btn btn-primary" id="btn-google-signin">Masuk dengan Google</button>
+    </div>`;
+  document.getElementById('btn-google-signin').onclick = async ()=>{
+    try{ await signInWithPopup(fbAuth, new GoogleAuthProvider()); }
+    catch(e){ console.error(e); showToast('Gagal masuk: '+(e.message||'coba lagi')); }
+  };
+}
+function hideLoginOverlay(){
+  const el = document.getElementById('loginOverlay');
+  el.style.display = 'none'; el.innerHTML='';
+}
+function renderUserBar(){
+  let bar = document.getElementById('userbar');
+  if(!bar){ bar = document.createElement('div'); bar.id='userbar'; bar.className='userbar'; document.body.appendChild(bar); }
+  bar.innerHTML = `<span>${fbUser.email||fbUser.displayName||'Masuk'}</span><button id="btn-signout">Keluar</button>`;
+  document.getElementById('btn-signout').onclick = ()=> signOut(fbAuth);
+}
+
+if(USE_FIREBASE){
+  onAuthStateChanged(fbAuth, async (user)=>{
+    fbUser = user;
+    if(user){ hideLoginOverlay(); renderUserBar(); await init(); }
+    else { renderLoginOverlay(); const bar=document.getElementById('userbar'); if(bar) bar.remove(); }
+  });
+} else {
+  init();
+}
+</script>
+</body>
+</html>

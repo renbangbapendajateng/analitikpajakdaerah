@@ -1,0 +1,37 @@
+rules_version = '2';
+
+// Aturan keamanan Firestore untuk "Analitik Data Pajak Daerah".
+// Prinsip: hanya pengguna yang SUDAH LOGIN (Google Sign-In) yang boleh baca/tulis.
+// Ganti EMAIL_DOMAIN di bawah jika ingin membatasi hanya ke domain email instansi
+// (mis. hanya akun @jatengprov.go.id yang boleh mengakses).
+
+function isSignedIn() {
+  return request.auth != null;
+}
+
+// Aktifkan baris di bawah (dan pakai isAllowedDomain() pada rules) kalau mau
+// membatasi akses hanya untuk email instansi tertentu.
+function isAllowedDomain() {
+  return isSignedIn()
+    && request.auth.token.email != null
+    && request.auth.token.email.matches('.*@jatengprov[.]go[.]id$');
+}
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /analitik_pajak_daerah/{docId} {
+      // Mode dasar: siapa pun yang sudah login (akun Google apa saja) boleh baca/tulis.
+      allow read, write: if isSignedIn();
+
+      // Mode lebih ketat (disarankan untuk produksi): hanya email domain instansi.
+      // Ganti baris di atas dengan baris ini setelah domain email dikonfirmasi berfungsi:
+      // allow read, write: if isAllowedDomain();
+    }
+
+    // Tolak akses ke koleksi lain secara default.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
