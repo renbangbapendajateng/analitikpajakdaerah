@@ -181,6 +181,8 @@ tr:last-child td{border-bottom:none;}
 <div id="modalRoot"></div>
 <div id="loginOverlay" style="display:none;"></div>
 
+<!-- Target default (dari file rekap_target.xlsx) — timpa file ini kapan pun mau ganti target tahunan default -->
+<script src="target-data.js"></script>
 <script type="module">
 /* =========================================================================
    ANALITIK DATA PAJAK DAERAH — app.js (inline)
@@ -917,11 +919,13 @@ function openTargetModal(){
   <div class="modal-backdrop" id="tg-backdrop">
     <div class="modal">
       <h3>Update Target</h3>
-      <p class="hint">Target tahunan (Pokok). PKB menggunakan 37 UPPD; Opsen menggunakan 35 Kab/Kota (Kota Semarang I/II/III digabung).</p>
+      <p class="hint">Target tahunan (Pokok). PKB &amp; BBNKB pakai 37 UPPD; Opsen PKB &amp; Opsen BBNKB pakai 35 Kab/Kota (Kota Semarang I/II/III digabung). Nilai default berasal dari <code>target-data.js</code> — mengisi di sini akan menimpanya khusus untuk entitas &amp; tahun ini.</p>
       <div class="field"><label>Jenis Pajak</label>
         <select id="tg-kategori">
           <option value="pkb">PKB (per UPPD, 37)</option>
           <option value="opsen">Opsen PKB (per Kab/Kota, 35)</option>
+          <option value="bbnkb">BBNKB (per UPPD, 37)</option>
+          <option value="opsen_bbnkb">Opsen BBNKB (per Kab/Kota, 35)</option>
         </select>
       </div>
       <div class="field"><label id="tg-entity-label">UPPD</label>
@@ -931,29 +935,40 @@ function openTargetModal(){
         <input type="number" id="tg-tahun" value="${state.tahun}" min="2015" max="2100">
       </div>
       <div class="field" id="tg-value-field"><label id="tg-value-label">Target PKB (Rp, Pokok)</label><input type="number" id="tg-value" placeholder="mis. 45000000000"></div>
+      <div class="footnote" id="tg-source-note"></div>
       <div class="modal-actions">
         <button class="btn-secondary" id="tg-cancel">Tutup</button>
         <button class="btn btn-primary" id="tg-save">Simpan Target</button>
       </div>
     </div>
   </div>`;
+  const KAT_CONF = {
+    pkb:        {label:'UPPD',          valueLabel:'Target PKB (Rp, Pokok)',        options:pkbOptions,   dbMap:()=>DB.targetsPkb,        group:'pkb',        field:'targetPkb'},
+    opsen:      {label:'Kab/Kota (Opsen)', valueLabel:'Target Opsen PKB (Rp, Pokok)', options:opsenOptions, dbMap:()=>DB.targetsOpsen,      group:'opsen',      field:'targetOpsen'},
+    bbnkb:      {label:'UPPD',          valueLabel:'Target BBNKB (Rp, Pokok)',      options:pkbOptions,   dbMap:()=>DB.targetsBbnkb,      group:'bbnkb',      field:'targetBbnkb'},
+    opsen_bbnkb:{label:'Kab/Kota (Opsen)', valueLabel:'Target Opsen BBNKB (Rp, Pokok)', options:opsenOptions, dbMap:()=>DB.targetsOpsenBbnkb, group:'opsenBbnkb', field:'targetOpsenBbnkb'},
+  };
   const katSel = document.getElementById('tg-kategori');
   const entitySel = document.getElementById('tg-entity');
   const entityLabel = document.getElementById('tg-entity-label');
   const valueLabel = document.getElementById('tg-value-label');
+  const sourceNote = document.getElementById('tg-source-note');
   function syncEntityOptions(){
-    if(katSel.value==='pkb'){ entitySel.innerHTML = pkbOptions; entityLabel.textContent='UPPD'; valueLabel.textContent='Target PKB (Rp, Pokok)'; }
-    else { entitySel.innerHTML = opsenOptions; entityLabel.textContent='Kab/Kota (Opsen)'; valueLabel.textContent='Target Opsen PKB (Rp, Pokok)'; }
+    const conf = KAT_CONF[katSel.value];
+    entitySel.innerHTML = conf.options; entityLabel.textContent = conf.label; valueLabel.textContent = conf.valueLabel;
   }
   function fillExisting(){
     const tahun = parseInt(document.getElementById('tg-tahun').value,10);
     const slug = entitySel.value;
-    if(katSel.value==='pkb'){
-      const t = DB.targetsPkb[slug+'_'+tahun];
-      document.getElementById('tg-value').value = t? t.targetPkb : '';
+    const conf = KAT_CONF[katSel.value];
+    const stored = conf.dbMap()[slug+'_'+tahun];
+    if(stored && stored[conf.field]!==undefined){
+      document.getElementById('tg-value').value = stored[conf.field];
+      sourceNote.textContent = 'Nilai ini sudah pernah di-update manual untuk entitas & tahun ini.';
     } else {
-      const t = DB.targetsOpsen[slug+'_'+tahun];
-      document.getElementById('tg-value').value = t? t.targetOpsen : '';
+      const def = defaultTargetValue(conf.group, slug, tahun);
+      document.getElementById('tg-value').value = def!==null ? def : '';
+      sourceNote.textContent = def!==null ? 'Nilai default dari target-data.js (belum pernah di-update manual).' : 'Belum ada target default maupun manual untuk entitas & tahun ini.';
     }
   }
   katSel.onchange = ()=>{ syncEntityOptions(); fillExisting(); };
@@ -966,18 +981,14 @@ function openTargetModal(){
     const slug = entitySel.value; if(!slug){ showToast('Pilih entitas dulu'); return; }
     const tahun = parseInt(document.getElementById('tg-tahun').value,10);
     const value = toNum(document.getElementById('tg-value').value);
-    if(katSel.value==='pkb'){
-      const name = (UPPD_MASTER.find(u=>u.slug===slug)||{}).canonical || slug;
-      const obj = {uppdSlug:slug, uppd:name, tahun, targetPkb:value};
-      await saveRecord(`target:pkb:${slug}:${tahun}`, obj);
-      DB.targetsPkb[slug+'_'+tahun] = obj;
-    } else {
-      const name = (OPSEN_ENTITIES.find(e=>e.slug===slug)||{}).canonical || slug;
-      const obj = {entitySlug:slug, entity:name, tahun, targetOpsen:value};
-      await saveRecord(`target:opsen:${slug}:${tahun}`, obj);
-      DB.targetsOpsen[slug+'_'+tahun] = obj;
-    }
-    root.innerHTML=''; showToast('Target tersimpan'); renderTab();
+    const conf = KAT_CONF[katSel.value];
+    const isEntityBased = (katSel.value==='opsen' || katSel.value==='opsen_bbnkb');
+    const name = isEntityBased ? (OPSEN_ENTITIES.find(e=>e.slug===slug)||{}).canonical||slug : (UPPD_MASTER.find(u=>u.slug===slug)||{}).canonical||slug;
+    const obj = isEntityBased ? {entitySlug:slug, entity:name, tahun, [conf.field]:value} : {uppdSlug:slug, uppd:name, tahun, [conf.field]:value};
+    const keyPrefix = {pkb:'target:pkb:', opsen:'target:opsen:', bbnkb:'target:bbnkb:', opsen_bbnkb:'target:opsen_bbnkb:'}[katSel.value];
+    await saveRecord(`${keyPrefix}${slug}:${tahun}`, obj);
+    conf.dbMap()[slug+'_'+tahun] = obj;
+    root.innerHTML=''; showToast('Target tersimpan (menimpa nilai default untuk entitas & tahun ini)'); renderTab();
   };
 }
 
@@ -1186,14 +1197,27 @@ function computeBbnkbVehicleBreakdown(){
   });
   return {roda, total};
 }
-function targetBbnkbFor(uppdSlug, tahun){
-  if(uppdSlug==='__ALL__'){
-    let bbnkb=0, any=false;
-    Object.values(DB.targetsBbnkb).forEach(t=>{ if(t.tahun===tahun){ bbnkb+=t.targetBbnkb; any=true; } });
-    return any? bbnkb : null;
+/* ---------- Target: prioritas hasil "Update Target" (tersimpan), fallback ke default bawaan (target-data.js) ---------- */
+function defaultTargetValue(group, slug, tahun){
+  const d = (window.TARGET_DEFAULTS && window.TARGET_DEFAULTS[group]) ? window.TARGET_DEFAULTS[group][slug+'_'+tahun] : undefined;
+  return d===undefined ? null : d;
+}
+function resolveTarget(group, dbMap, fieldName, entityList, slug, tahun){
+  if(slug==='__ALL__'){
+    let sum=0, any=false;
+    entityList.forEach(e=>{
+      const v = resolveTarget(group, dbMap, fieldName, entityList, e.slug, tahun);
+      if(v!==null){ sum+=v; any=true; }
+    });
+    return any? sum : null;
   }
-  const t = DB.targetsBbnkb[uppdSlug+'_'+tahun];
-  return t? t.targetBbnkb : null;
+  const stored = dbMap[slug+'_'+tahun];
+  if(stored && stored[fieldName]!==undefined) return stored[fieldName];
+  return defaultTargetValue(group, slug, tahun);
+}
+
+function targetBbnkbFor(uppdSlug, tahun){
+  return resolveTarget('bbnkb', DB.targetsBbnkb, 'targetBbnkb', UPPD_MASTER, uppdSlug, tahun);
 }
 
 /* ---------- Opsen BBNKB query helpers (35 entitas, Semarang I/II/III digabung — sama seperti Opsen PKB) ---------- */
@@ -1218,13 +1242,7 @@ function bbnkbOpsenRealisasi(entitySlug, tahun, bulan, mode){
   return rec ? rec.pokok : null;
 }
 function targetOpsenBbnkbFor(entitySlug, tahun){
-  if(entitySlug==='__ALL__'){
-    let sum=0, any=false;
-    Object.values(DB.targetsOpsenBbnkb).forEach(t=>{ if(t.tahun===tahun){ sum+=t.targetOpsenBbnkb; any=true; } });
-    return any? sum : null;
-  }
-  const t = DB.targetsOpsenBbnkb[entitySlug+'_'+tahun];
-  return t? t.targetOpsenBbnkb : null;
+  return resolveTarget('opsenBbnkb', DB.targetsOpsenBbnkb, 'targetOpsenBbnkb', OPSEN_ENTITIES, entitySlug, tahun);
 }
 
 /* ---------- Analisis/Proyeksi BBNKB: rata-rata harian x hari kerja, bisa disesuaikan % ---------- */
@@ -1259,22 +1277,10 @@ function bbnkbProjection(uppdSlug, tahun, adjustPct){
 }
 
 function targetPkbFor(uppdSlug, tahun){
-  if(uppdSlug==='__ALL__'){
-    let pkb=0, any=false;
-    Object.values(DB.targetsPkb).forEach(t=>{ if(t.tahun===tahun){ pkb+=t.targetPkb; any=true; } });
-    return any? pkb : null;
-  }
-  const t = DB.targetsPkb[uppdSlug+'_'+tahun];
-  return t? t.targetPkb : null;
+  return resolveTarget('pkb', DB.targetsPkb, 'targetPkb', UPPD_MASTER, uppdSlug, tahun);
 }
 function targetOpsenFor(entitySlug, tahun){
-  if(entitySlug==='__ALL__'){
-    let opsen=0, any=false;
-    Object.values(DB.targetsOpsen).forEach(t=>{ if(t.tahun===tahun){ opsen+=t.targetOpsen; any=true; } });
-    return any? opsen : null;
-  }
-  const t = DB.targetsOpsen[entitySlug+'_'+tahun];
-  return t? t.targetOpsen : null;
+  return resolveTarget('opsen', DB.targetsOpsen, 'targetOpsen', OPSEN_ENTITIES, entitySlug, tahun);
 }
 function realisasi(kategori, uppdSlug, tahun, bulan, mode){
   const rec = mode==='kumulatif' ? cumulativeTotal(kategori,uppdSlug,tahun,bulan) : monthlyTotal(kategori,uppdSlug,tahun,bulan);
@@ -1324,6 +1330,11 @@ function populateFilterOptions(){
   [...DB.pd05, ...DB.komponen].forEach(r=>years.add(r.tahun));
   Object.values(DB.targetsPkb).forEach(t=>years.add(t.tahun));
   Object.values(DB.targetsOpsen).forEach(t=>years.add(t.tahun));
+  if(window.TARGET_DEFAULTS){
+    Object.values(window.TARGET_DEFAULTS).forEach(group=>{
+      Object.keys(group).forEach(k=>{ const y = parseInt(k.split('_').pop(),10); if(!isNaN(y)) years.add(y); });
+    });
+  }
   years.add(new Date().getFullYear());
   const sortedYears = [...years].sort((a,b)=>b-a);
   const tahunSel = document.getElementById('f-tahun');
