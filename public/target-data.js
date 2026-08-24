@@ -1,4 +1,4 @@
-// Target default — digenerate dari /mnt/user-data/uploads/rekap_target.xlsx untuk tahun 2027
+// Target default — digenerate dari /mnt/user-data/uploads/rekap_target.xlsx untuk tahun 2026
 // Timpa file ini (dengan nama sama: target-data.js) kapan pun mau ganti target default.
 // Perubahan lewat menu "Update Target" di aplikasi TETAP diprioritaskan di atas nilai di file ini.
 window.TARGET_DEFAULTS = {

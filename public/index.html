@@ -169,6 +169,7 @@ tr:last-child td{border-bottom:none;}
       <button class="btn btn-primary" id="btn-upload">⬆ Upload Data</button>
       <button class="btn btn-ghost" id="btn-target">🎯 Update Target</button>
       <button class="btn btn-ghost" id="btn-target-upload" style="display:none;">📥 Upload Target (Excel)</button>
+      <button class="btn btn-ghost" id="btn-harikerja">📅 Kalender Hari Kerja</button>
       <button class="btn btn-ghost" id="btn-manage">🗂 Kelola Data</button>
     </div>
     <input type="file" id="fileInput" multiple accept=".xlsx,.xls">
@@ -318,13 +319,11 @@ let state = {
   mode: 'kumulatif', // or 'bulanan'
   opsenEntity: '__ALL__', // local filter for Opsen PKB tab (35 entitas)
   opsenBbnkbEntity: '__ALL__', // local filter for Opsen BBNKB tab (35 entitas)
-  hariElapsedOverride: null, // manual override for "jumlah hari" berjalan
-  hariRemainOverride: null,  // manual override for "jumlah hari" sisa
-  komponenAdjustPct: 0, // penyesuaian % untuk bulan yang belum terealisasi di tab Analisis/Proyeksi PKB
+  komponenAdjustPct: {}, // penyesuaian % PER KOMPONEN untuk bulan yang belum terealisasi (Analisis/Proyeksi PKB), key=kode komponen
   bbnkbAdjustPct: 0, // penyesuaian % untuk bulan yang belum terealisasi di tab Analisis/Proyeksi BBNKB
 };
 
-let DB = { pd05: [], komponen: [], bbnkb: [], bbnkbOpsen: [], targetsPkb: {}, targetsOpsen: {}, targetsBbnkb: {}, targetsOpsenBbnkb: {}, targetsPap: {}, uppdList: [] };
+let DB = { pd05: [], komponen: [], bbnkb: [], bbnkbOpsen: [], targetsPkb: {}, targetsOpsen: {}, targetsBbnkb: {}, targetsOpsenBbnkb: {}, targetsPap: {}, hariKerja: {}, uppdList: [] };
 const charts = {}; // canvas id -> Chart instance
 
 /* ---------- utils ---------- */
@@ -374,6 +373,25 @@ function workingDaysRange(year, mFrom, mTo){
 }
 function totalWorkingDaysYear(year){ return workingDaysRange(year,1,12); }
 
+/* ---------- Kalender Hari Kerja (dibakukan): default Senin-Sabtu, bisa ditimpa manual per bulan/tahun ---------- */
+// Ini SATU-SATUNYA sumber "jumlah hari kerja" yang dipakai di seluruh aplikasi
+// (Capaian PKB/BBNKB rata-rata harian, Analisis/Proyeksi PKB/BBNKB) — supaya konsisten.
+function hariKerjaBulan(tahun, bulan){
+  const o = DB.hariKerja[tahun+'_'+bulan];
+  if(o && typeof o.hari==='number') return o.hari;
+  return workingDaysInMonth(tahun, bulan);
+}
+function hariKerjaRange(tahun, mFrom, mTo){
+  if(mTo<mFrom) return 0;
+  let c=0;
+  for(let m=mFrom; m<=mTo; m++) c += hariKerjaBulan(tahun,m);
+  return c;
+}
+function isHariKerjaOverridden(tahun, bulan){
+  const o = DB.hariKerja[tahun+'_'+bulan];
+  return !!(o && typeof o.hari==='number');
+}
+
 /* ---------- storage layer (adapter: window.storage di Claude, Firestore saat deploy sendiri) ---------- */
 async function saveRecord(key, obj){
   try{
@@ -388,7 +406,7 @@ async function deleteRecord(key){
   }catch(e){ console.error('storage delete failed', key, e); }
 }
 async function loadAllFromStorage(){
-  DB = { pd05: [], komponen: [], bbnkb: [], bbnkbOpsen: [], targetsPkb: {}, targetsOpsen: {}, targetsBbnkb: {}, targetsOpsenBbnkb: {}, targetsPap: {}, uppdList: [] };
+  DB = { pd05: [], komponen: [], bbnkb: [], bbnkbOpsen: [], targetsPkb: {}, targetsOpsen: {}, targetsBbnkb: {}, targetsOpsenBbnkb: {}, targetsPap: {}, hariKerja: {}, uppdList: [] };
   try{
     let entries = []; // [{key, value}]
     if(USE_FIREBASE){
@@ -415,6 +433,7 @@ async function loadAllFromStorage(){
         else if(k.startsWith('target:bbnkb:')) DB.targetsBbnkb[val.uppdSlug+'_'+val.tahun] = val;
         else if(k.startsWith('target:opsen_bbnkb:')) DB.targetsOpsenBbnkb[val.entitySlug+'_'+val.tahun] = val;
         else if(k.startsWith('target:pap:')) DB.targetsPap[val.uppdSlug+'_'+val.tahun] = val;
+        else if(k.startsWith('harikerja:')) DB.hariKerja[val.tahun+'_'+val.bulan] = val;
         else if(k.startsWith('target:')){ // legacy combined target record — migrate on read
           if(val.targetPkb!==undefined) DB.targetsPkb[val.uppdSlug+'_'+val.tahun] = {uppdSlug:val.uppdSlug, uppd:val.uppd, tahun:val.tahun, targetPkb:val.targetPkb};
           if(val.targetOpsen!==undefined){
@@ -749,12 +768,37 @@ function openBatchConfirmModal(results){
   const errHtml = errRows.length ? `
     <p class="footnote" style="margin-top:12px;">${errRows.length} berkas dilewati: ${errRows.map(r=>`${r.filename} (${r.error})`).join('; ')}</p>` : '';
 
+  const hasPd05 = okRows.some(r=>r.parsed.type==='pd05');
+  const hasBbnkb = okRows.some(r=>r.parsed.type==='bbnkb');
+  const bulkBarHtml = (hasPd05 || hasBbnkb) ? `
+    <div class="card" style="padding:10px 14px;margin-bottom:12px;">
+      <div style="font-size:12px;color:var(--ink-600);margin-bottom:6px;">Nama file PKB &amp; BBNKB reguler sering identik dengan file Opsen — kalau satu batch ini semuanya Opsen (atau semuanya reguler), atur sekali di sini:</div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;">
+        ${hasPd05? `<span style="display:flex;gap:6px;align-items:center;">
+          <select id="bulk-kategori-pd05" style="padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">
+            <option value="pkb">PKB Reguler</option>
+            <option value="opsen">Opsen PKB</option>
+            <option value="esamsat">E-Samsat</option>
+          </select>
+          <button class="btn-secondary" id="bulk-apply-pd05" style="padding:6px 10px;font-size:12.5px;">Terapkan ke semua file PD.05</button>
+        </span>` : ''}
+        ${hasBbnkb? `<span style="display:flex;gap:6px;align-items:center;">
+          <select id="bulk-kategori-bbnkb" style="padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">
+            <option value="bbnkb">BBNKB Reguler</option>
+            <option value="opsen_bbnkb">Opsen BBNKB</option>
+          </select>
+          <button class="btn-secondary" id="bulk-apply-bbnkb" style="padding:6px 10px;font-size:12.5px;">Terapkan ke semua file BBNKB</button>
+        </span>` : ''}
+      </div>
+    </div>` : '';
+
   root.innerHTML = `
   <div class="modal-backdrop" id="cf-backdrop">
     <div class="modal modal-wide">
       <h3>Konfirmasi ${okRows.length} Berkas</h3>
       <p class="hint">Periksa UPPD, kategori, bulan &amp; tahun tiap baris (terdeteksi otomatis dari isi/nama berkas). Baris dengan UPPD kosong akan dilewati saat disimpan.</p>
       <datalist id="batch-uppd-datalist">${uppdOptions}</datalist>
+      ${bulkBarHtml}
       ${okRows.length===0? `<div class="empty">Tidak ada berkas valid untuk disimpan.</div>` : `
       <div style="max-height:52vh;overflow:auto;">
         <table class="batch-table"><thead><tr>
@@ -768,6 +812,19 @@ function openBatchConfirmModal(results){
       </div>
     </div>
   </div>`;
+
+  const bulkPd05Btn = document.getElementById('bulk-apply-pd05');
+  if(bulkPd05Btn) bulkPd05Btn.onclick = ()=>{
+    const val = document.getElementById('bulk-kategori-pd05').value;
+    root.querySelectorAll('.bt-kategori').forEach(sel=> sel.value = val);
+    showToast(`Kategori "${val==='pkb'?'PKB Reguler':val==='opsen'?'Opsen PKB':'E-Samsat'}" diterapkan ke semua file PD.05`);
+  };
+  const bulkBbnkbBtn = document.getElementById('bulk-apply-bbnkb');
+  if(bulkBbnkbBtn) bulkBbnkbBtn.onclick = ()=>{
+    const val = document.getElementById('bulk-kategori-bbnkb').value;
+    root.querySelectorAll('.bt-kategori-bbnkb').forEach(sel=> sel.value = val);
+    showToast(`Kategori "${val==='bbnkb'?'BBNKB Reguler':'Opsen BBNKB'}" diterapkan ke semua file BBNKB`);
+  };
 
   document.getElementById('cf-cancel').onclick = ()=> root.innerHTML='';
   document.getElementById('cf-backdrop').onclick = (e)=>{ if(e.target.id==='cf-backdrop') root.innerHTML=''; };
@@ -992,6 +1049,59 @@ function openTargetModal(){
   };
 }
 
+/* ---------- kalender hari kerja modal ---------- */
+function openHariKerjaModal(){
+  const root = document.getElementById('modalRoot');
+  const tahun = state.tahun;
+  root.innerHTML = `
+  <div class="modal-backdrop" id="hk-backdrop">
+    <div class="modal">
+      <h3>Kalender Hari Kerja</h3>
+      <p class="hint">Jumlah hari kerja per bulan yang dipakai di seluruh aplikasi (rata-rata harian, proyeksi). Default dihitung otomatis (Senin–Sabtu); isi manual di bawah untuk menimpa sesuai kalender resmi (memperhitungkan hari libur nasional/cuti bersama).</p>
+      <div class="field"><label>Tahun</label>
+        <input type="number" id="hk-tahun" value="${tahun}" min="2015" max="2100">
+      </div>
+      <div id="hk-months" style="max-height:360px;overflow:auto;"></div>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="hk-cancel">Tutup</button>
+        <button class="btn btn-primary" id="hk-save">Simpan Kalender</button>
+      </div>
+    </div>
+  </div>`;
+  function renderMonths(){
+    const y = parseInt(document.getElementById('hk-tahun').value,10);
+    const wrap = document.getElementById('hk-months');
+    wrap.innerHTML = MONTHS.map((m,idx)=>{
+      const bulan = idx+1;
+      const overridden = isHariKerjaOverridden(y,bulan);
+      const val = hariKerjaBulan(y,bulan);
+      const defVal = workingDaysInMonth(y,bulan);
+      return `<div class="field" style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <label style="min-width:90px;margin-bottom:0;">${m}</label>
+        <input type="number" data-bulan="${bulan}" class="hk-input" value="${val}" min="0" max="31" style="width:80px;">
+        <span style="font-size:11.5px;color:var(--ink-400);">${overridden? '(manual — default '+defVal+')' : '(default, Senin–Sabtu)'}</span>
+      </div>`;
+    }).join('');
+  }
+  renderMonths();
+  document.getElementById('hk-tahun').onchange = renderMonths;
+  document.getElementById('hk-cancel').onclick = ()=> root.innerHTML='';
+  document.getElementById('hk-backdrop').onclick = (e)=>{ if(e.target.id==='hk-backdrop') root.innerHTML=''; };
+  document.getElementById('hk-save').onclick = async ()=>{
+    const y = parseInt(document.getElementById('hk-tahun').value,10);
+    const inputs = document.querySelectorAll('.hk-input');
+    for(const inp of inputs){
+      const bulan = parseInt(inp.getAttribute('data-bulan'),10);
+      const hari = parseInt(inp.value,10);
+      if(isNaN(hari)) continue;
+      const obj = {tahun:y, bulan, hari};
+      await saveRecord(`harikerja:${y}:${bulan}`, obj);
+      DB.hariKerja[y+'_'+bulan] = obj;
+    }
+    root.innerHTML=''; showToast(`Kalender hari kerja ${y} tersimpan`); renderTab();
+  };
+}
+
 /* ---------- data manager modal ---------- */
 function openManageModal(){
   const root = document.getElementById('modalRoot');
@@ -1111,14 +1221,15 @@ const KOMPONEN_LABELS = {
   kendaraan_baru:'Kendaraan Baru', mutasi_masuk:'Mutasi Masuk', lainnya:'Lainnya',
 };
 // Proyeksi per komponen per bulan: bulan dengan data -> aktual; bulan tanpa data -> rata2 harian (dari bulan
-// yang sudah terealisasi tahun berjalan) x hari kerja bulan tsb, dengan penyesuaian % opsional.
-function komponenProjection(uppdSlug, tahun, adjustPct){
+// yang sudah terealisasi tahun berjalan) x hari kerja bulan tsb (Kalender Hari Kerja), dengan penyesuaian % PER KOMPONEN.
+function komponenProjection(uppdSlug, tahun, adjustPctByCat){
+  adjustPctByCat = adjustPctByCat || {};
   let sumPerCat={}; KOMPONEN_CATS.forEach(k=>sumPerCat[k]=0);
   let sumHari=0, anyActual=false;
   const monthly = [];
   for(let m=1;m<=12;m++){
     const hasData = komponenRecords(uppdSlug).some(r=>r.tahun===tahun && r.bulan===m);
-    const hari = workingDaysInMonth(tahun,m);
+    const hari = hariKerjaBulan(tahun,m);
     if(hasData){
       const cats = komponenCategorySums(uppdSlug,tahun,m,m);
       KOMPONEN_CATS.forEach(k=> sumPerCat[k]+=cats[k]);
@@ -1131,14 +1242,18 @@ function komponenProjection(uppdSlug, tahun, adjustPct){
   const rataHarian = {}; KOMPONEN_CATS.forEach(k=> rataHarian[k] = (anyActual && sumHari>0) ? sumPerCat[k]/sumHari : 0);
   monthly.forEach(row=>{
     if(row.status==='proyeksi'){
-      const cats = {}; KOMPONEN_CATS.forEach(k=> cats[k] = rataHarian[k]*row.hari*(1+ (adjustPct||0)/100));
+      const cats = {}; KOMPONEN_CATS.forEach(k=>{
+        const pct = adjustPctByCat[k] || 0;
+        cats[k] = rataHarian[k]*row.hari*(1+pct/100);
+      });
       row.cats = cats;
     }
     row.total = KOMPONEN_CATS.reduce((a,k)=>a+row.cats[k],0);
   });
   const totalAktual = monthly.filter(r=>r.status==='aktual').reduce((a,r)=>a+r.total,0);
   const totalProyeksi = monthly.filter(r=>r.status==='proyeksi').reduce((a,r)=>a+r.total,0);
-  return {monthly, rataHarian, sumHari, anyActual, totalAktual, totalProyeksi, totalSetahun: totalAktual+totalProyeksi};
+  const totalPerCat = {}; KOMPONEN_CATS.forEach(k=> totalPerCat[k] = monthly.reduce((a,r)=>a+r.cats[k],0));
+  return {monthly, rataHarian, sumHari, anyActual, totalAktual, totalProyeksi, totalSetahun: totalAktual+totalProyeksi, totalPerCat};
 }
 
 /* ---------- BBNKB query helpers ---------- */
@@ -1349,8 +1464,8 @@ function populateFilterOptions(){
 }
 function wireFilterEvents(){
   document.getElementById('f-uppd').onchange = e=>{ state.uppd=e.target.value; renderTab(); };
-  document.getElementById('f-tahun').onchange = e=>{ state.tahun=parseInt(e.target.value,10); state.hariElapsedOverride=null; state.hariRemainOverride=null; renderTab(); };
-  document.getElementById('f-bulan').onchange = e=>{ state.bulan=parseInt(e.target.value,10); state.hariElapsedOverride=null; state.hariRemainOverride=null; renderTab(); };
+  document.getElementById('f-tahun').onchange = e=>{ state.tahun=parseInt(e.target.value,10); renderTab(); };
+  document.getElementById('f-bulan').onchange = e=>{ state.bulan=parseInt(e.target.value,10); renderTab(); };
   document.getElementById('mode-kumulatif').onclick = ()=>{ state.mode='kumulatif'; syncModeButtons(); renderTab(); };
   document.getElementById('mode-bulanan').onclick = ()=>{ state.mode='bulanan'; syncModeButtons(); renderTab(); };
   document.getElementById('btn-upload').onclick = ()=> document.getElementById('fileInput').click();
@@ -1359,6 +1474,7 @@ function wireFilterEvents(){
   document.getElementById('btn-target-upload').onclick = ()=> document.getElementById('targetFileInput').click();
   document.getElementById('targetFileInput').onchange = e=>{ handleTargetFile(e.target.files[0]); e.target.value=''; };
   document.getElementById('btn-manage').onclick = openManageModal;
+  document.getElementById('btn-harikerja').onclick = openHariKerjaModal;
 }
 function syncModeButtons(){
   document.getElementById('mode-kumulatif').classList.toggle('active', state.mode==='kumulatif');
@@ -1450,11 +1566,9 @@ function renderCapaian(c){
   const objekKumPrev = realisasiField('pkb', state.uppd, state.tahun-1, state.bulan, 'kumulatif', 'obyek');
   const growthObjek = (objekKum!==null && objekKumPrev) ? ((objekKum-objekKumPrev)/objekKumPrev*100) : null;
 
-  // -- rata-rata harian (jumlah hari input manual, default dari hari kerja Senin-Sabtu) --
-  const hariElapsedDefault = workingDaysRange(state.tahun,1,state.bulan);
-  const hariRemainDefault = workingDaysRange(state.tahun, state.bulan+1, 12);
-  const hariElapsed = state.hariElapsedOverride!==null ? state.hariElapsedOverride : hariElapsedDefault;
-  const hariRemain = state.hariRemainOverride!==null ? state.hariRemainOverride : hariRemainDefault;
+  // -- rata-rata harian (memakai Kalender Hari Kerja terpusat) --
+  const hariElapsed = hariKerjaRange(state.tahun,1,state.bulan);
+  const hariRemain = hariKerjaRange(state.tahun, state.bulan+1, 12);
   const rataHarian = (realKum!==null && hariElapsed>0) ? realKum/hariElapsed : null;
   const sisaTarget = (d.targetTahun!==null && realKum!==null) ? (d.targetTahun-realKum) : null;
   const rataHarianDibutuhkan = (sisaTarget!==null && hariRemain>0) ? sisaTarget/hariRemain : null;
@@ -1519,16 +1633,16 @@ function renderCapaian(c){
     </div>
 
     <div class="card" style="margin-top:14px;">
-      <div class="kpi-label" style="margin-bottom:10px;">Rata-rata Harian (jumlah hari dapat diubah manual)</div>
+      <div class="kpi-label" style="margin-bottom:10px;">Rata-rata Harian <button class="btn-secondary" id="btn-open-harikerja-pkb" style="padding:3px 9px;font-size:11px;margin-left:6px;">📅 Atur Kalender Hari Kerja</button></div>
       <div class="grid grid-4" style="gap:10px;">
-        <div class="field" style="margin-bottom:0;"><label>Hari berjalan</label><input type="number" id="in-hari-elapsed" value="${hariElapsed}" min="0"></div>
+        <div><div class="kpi-label">Hari Berjalan</div><div class="kpi-value mono" style="font-size:16px;">${hariElapsed}</div></div>
         <div><div class="kpi-label">Rata-rata Harian</div><div class="kpi-value mono" style="font-size:16px;">${rataHarian===null?'–':fmtRpShort(rataHarian)}</div>
           <div class="kpi-sub">realisasi ÷ ${hariElapsed} hari</div></div>
-        <div class="field" style="margin-bottom:0;"><label>Hari tersisa</label><input type="number" id="in-hari-remain" value="${hariRemain}" min="0"></div>
+        <div><div class="kpi-label">Hari Tersisa</div><div class="kpi-value mono" style="font-size:16px;">${hariRemain}</div></div>
         <div><div class="kpi-label">Rata-rata Harian Dibutuhkan</div><div class="kpi-value mono ${rataHarianDibutuhkan!==null&&rataHarian!==null&&rataHarianDibutuhkan>rataHarian?'neg':'pos'}" style="font-size:16px;">${rataHarianDibutuhkan===null?'–':fmtRpShort(rataHarianDibutuhkan)}</div>
           <div class="kpi-sub">agar target tahunan tercapai</div></div>
       </div>
-      <div class="footnote">Default hari kerja dihitung Senin–Sabtu; dapat ditimpa manual sesuai kebutuhan.</div>
+      <div class="footnote">Jumlah hari kerja mengikuti Kalender Hari Kerja (default Senin–Sabtu, bisa ditimpa manual di menu Kalender Hari Kerja).</div>
     </div>
 
     <div class="grid grid-2" style="margin-top:14px;">
@@ -1573,10 +1687,8 @@ function renderCapaian(c){
     makeChart('chart-tren', {type:'line', data:{labels:MONTHS_SHORT, datasets:trenDatasets}, options:{responsive:true,maintainAspectRatio:false,
       scales:{y:{ticks:{callback:v=>fmtRpShort(v)}}}}});
   }
-  const inElapsed = document.getElementById('in-hari-elapsed');
-  const inRemain = document.getElementById('in-hari-remain');
-  if(inElapsed) inElapsed.onchange = e=>{ const v=parseInt(e.target.value,10); state.hariElapsedOverride = isNaN(v)?null:v; renderTab(); };
-  if(inRemain) inRemain.onchange = e=>{ const v=parseInt(e.target.value,10); state.hariRemainOverride = isNaN(v)?null:v; renderTab(); };
+  const btnHariKerjaPkb = document.getElementById('btn-open-harikerja-pkb');
+  if(btnHariKerjaPkb) btnHariKerjaPkb.onclick = openHariKerjaModal;
 }
 
 /* ---------- Tab: Capaian BBNKB (37 UPPD, tren, capaian, sub capaian, ranking) ---------- */
@@ -1592,10 +1704,8 @@ function renderCapaianBbnkb(c){
   const growthObjek = (objekKum!==null && objekKumPrev) ? ((objekKum-objekKumPrev)/objekKumPrev*100) : null;
 
   // -- rata-rata harian (pakai override jumlah hari yang sama dengan tab Capaian PKB) --
-  const hariElapsedDefault = workingDaysRange(state.tahun,1,state.bulan);
-  const hariRemainDefault = workingDaysRange(state.tahun, state.bulan+1, 12);
-  const hariElapsed = state.hariElapsedOverride!==null ? state.hariElapsedOverride : hariElapsedDefault;
-  const hariRemain = state.hariRemainOverride!==null ? state.hariRemainOverride : hariRemainDefault;
+  const hariElapsed = hariKerjaRange(state.tahun,1,state.bulan);
+  const hariRemain = hariKerjaRange(state.tahun, state.bulan+1, 12);
   const rataHarian = (realKum!==null && hariElapsed>0) ? realKum/hariElapsed : null;
   const sisaTarget = (d.targetTahun!==null && realKum!==null) ? (d.targetTahun-realKum) : null;
   const rataHarianDibutuhkan = (sisaTarget!==null && hariRemain>0) ? sisaTarget/hariRemain : null;
@@ -1661,15 +1771,16 @@ function renderCapaianBbnkb(c){
     </div>
 
     <div class="card" style="margin-top:14px;">
-      <div class="kpi-label" style="margin-bottom:10px;">Rata-rata Harian (jumlah hari dapat diubah manual — sama dengan tab Capaian PKB)</div>
+      <div class="kpi-label" style="margin-bottom:10px;">Rata-rata Harian <button class="btn-secondary" id="btn-open-harikerja-bbnkb" style="padding:3px 9px;font-size:11px;margin-left:6px;">📅 Atur Kalender Hari Kerja</button></div>
       <div class="grid grid-4" style="gap:10px;">
-        <div class="field" style="margin-bottom:0;"><label>Hari berjalan</label><input type="number" id="in-hari-elapsed-bbnkb" value="${hariElapsed}" min="0"></div>
+        <div><div class="kpi-label">Hari Berjalan</div><div class="kpi-value mono" style="font-size:16px;">${hariElapsed}</div></div>
         <div><div class="kpi-label">Rata-rata Harian</div><div class="kpi-value mono" style="font-size:16px;">${rataHarian===null?'–':fmtRpShort(rataHarian)}</div>
           <div class="kpi-sub">realisasi ÷ ${hariElapsed} hari</div></div>
-        <div class="field" style="margin-bottom:0;"><label>Hari tersisa</label><input type="number" id="in-hari-remain-bbnkb" value="${hariRemain}" min="0"></div>
+        <div><div class="kpi-label">Hari Tersisa</div><div class="kpi-value mono" style="font-size:16px;">${hariRemain}</div></div>
         <div><div class="kpi-label">Rata-rata Harian Dibutuhkan</div><div class="kpi-value mono ${rataHarianDibutuhkan!==null&&rataHarian!==null&&rataHarianDibutuhkan>rataHarian?'neg':'pos'}" style="font-size:16px;">${rataHarianDibutuhkan===null?'–':fmtRpShort(rataHarianDibutuhkan)}</div>
           <div class="kpi-sub">agar target tahunan tercapai</div></div>
       </div>
+      <div class="footnote">Jumlah hari kerja sama dengan Kalender Hari Kerja yang dipakai di tab Capaian PKB.</div>
     </div>
 
     <div class="grid grid-2" style="margin-top:14px;">
@@ -1720,10 +1831,8 @@ function renderCapaianBbnkb(c){
     makeChart('chart-tren-bbnkb', {type:'line', data:{labels:MONTHS_SHORT, datasets:trenDatasets}, options:{responsive:true,maintainAspectRatio:false,
       scales:{y:{ticks:{callback:v=>fmtRpShort(v)}}}}});
   }
-  const inElapsed = document.getElementById('in-hari-elapsed-bbnkb');
-  const inRemain = document.getElementById('in-hari-remain-bbnkb');
-  if(inElapsed) inElapsed.onchange = e=>{ const v=parseInt(e.target.value,10); state.hariElapsedOverride = isNaN(v)?null:v; renderTab(); };
-  if(inRemain) inRemain.onchange = e=>{ const v=parseInt(e.target.value,10); state.hariRemainOverride = isNaN(v)?null:v; renderTab(); };
+  const btnHariKerjaBbnkb = document.getElementById('btn-open-harikerja-bbnkb');
+  if(btnHariKerjaBbnkb) btnHariKerjaBbnkb.onclick = openHariKerjaModal;
 }
 
 /* ---------- Tab: Analisis / Proyeksi BBNKB ---------- */
@@ -1917,35 +2026,62 @@ function renderOpsenTab(c){
 }
 
 function renderKomponen(c){
-  if(state.uppd==='__ALL__'){
-    c.innerHTML = `
-      <div class="section-title">Pembayaran PKB per Komponen</div>
-      <div class="empty">Pilih satu UPPD terlebih dahulu di filter atas — proyeksi rata-rata harian dihitung per UPPD (hari kerja &amp; pola pembayaran tiap UPPD berbeda).</div>`;
-    return;
-  }
+  if(!state.komponenAdjustPct) state.komponenAdjustPct = {};
   const proj = komponenProjection(state.uppd, state.tahun, state.komponenAdjustPct);
-  const totalPerCat = {}; KOMPONEN_CATS.forEach(k=> totalPerCat[k] = proj.monthly.reduce((a,r)=>a+r.cats[k],0));
-  const presets = [-10,-5,0,5,10,15,20];
+  const quickPresets = [-15,-10,-5,0,5,10,15,20];
 
   c.innerHTML = `
-    <div class="section-title">Pembayaran PKB per Komponen — ${uppdLabel()}</div>
-    <p class="section-desc">Rincian per bulan, tahun ${state.tahun}. Bulan yang sudah ada data laporan Kertas Kerja Piutang ditandai <b>Aktual</b>; bulan yang belum diisi otomatis diisi <b>Proyeksi</b> = rata-rata harian (dari bulan aktual tahun ini) × jumlah hari kerja bulan tsb.</p>
+    <div class="section-title">Analisis / Proyeksi PKB — ${uppdLabel()}</div>
+    <p class="section-desc">Proyeksi realisasi Pokok PKB per komponen s.d. 31 Desember ${state.tahun}. Bulan yang sudah ada data laporan Kertas Kerja Piutang ditandai <b>Aktual</b>; bulan yang belum diisi otomatis diisi rata-rata harian × jumlah hari kerja bulan tsb (Kalender Hari Kerja).</p>
 
     <div class="card">
-      <div class="kpi-label" style="margin-bottom:8px;">Penyesuaian Proyeksi</div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
-        ${presets.map(p=>`<button class="btn ${state.komponenAdjustPct===p?'btn-primary':'btn-secondary'}" data-preset="${p}" style="padding:7px 12px;">${p>0?'+':''}${p}%</button>`).join('')}
-        <span style="font-size:12.5px;color:var(--ink-600);margin-left:6px;">atau custom:</span>
-        <input type="number" id="in-komponen-adjust" value="${state.komponenAdjustPct}" style="width:80px;padding:7px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px;" step="1">
-        <span style="font-size:12.5px;color:var(--ink-600);">%</span>
-      </div>
-      <div class="footnote">Penyesuaian hanya berlaku untuk bulan berstatus Proyeksi (tidak mengubah bulan Aktual). Rata-rata harian dasar: ${proj.anyActual? fmtRpShort(Object.values(proj.rataHarian).reduce((a,b)=>a+b,0))+' / hari kerja' : 'belum ada bulan aktual tahun ini'}.</div>
+      <div class="kpi-label">Total Sudah Masuk Kas Daerah (Realisasi Aktual)</div>
+      <div class="kpi-value mono" style="font-size:24px;">${fmtRp(proj.totalAktual)}</div>
+      <div class="kpi-sub">${proj.monthly.filter(r=>r.status==='aktual').length} dari 12 bulan sudah ada data</div>
     </div>
 
-    <div class="grid grid-2" style="margin-top:14px;">
-      <div class="card"><div class="kpi-label">Total Aktual (bulan yang sudah ada data)</div><div class="kpi-value mono" style="font-size:17px;">${fmtRp(proj.totalAktual)}</div></div>
-      <div class="card"><div class="kpi-label">Total Proyeksi (bulan yang belum ada data)</div><div class="kpi-value mono" style="font-size:17px;">${fmtRp(proj.totalProyeksi)}</div>
-        <div class="kpi-sub">dengan penyesuaian ${state.komponenAdjustPct>0?'+':''}${state.komponenAdjustPct}%</div></div>
+    <div class="section-title" style="margin-top:18px;">Rata-rata Harian per Komponen</div>
+    <p class="section-desc">Dipakai sebagai basis proyeksi bulan yang belum ada data. Penyesuaian % berlaku per komponen — hanya memengaruhi bulan berstatus Proyeksi.</p>
+    <div class="card">
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px;">
+        <span style="font-size:12px;color:var(--ink-600);">Terapkan penyesuaian ke semua komponen:</span>
+        ${quickPresets.map(p=>`<button class="btn btn-secondary" data-preset-all="${p}" style="padding:6px 10px;font-size:12px;">${p>0?'+':''}${p}%</button>`).join('')}
+      </div>
+      <table><thead><tr><th>Komponen</th><th class="right">Rata-rata Harian (Rp/hari kerja)</th><th style="width:140px;">Penyesuaian Proyeksi</th></tr></thead>
+      <tbody>${KOMPONEN_CATS.map(k=>`
+        <tr>
+          <td>${KOMPONEN_LABELS[k]}</td>
+          <td class="right mono">${proj.anyActual? fmtRp(proj.rataHarian[k]) : '–'}</td>
+          <td><input type="number" class="komp-adjust-input" data-kat="${k}" value="${state.komponenAdjustPct[k]||0}" style="width:70px;padding:5px 7px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;" step="1"> %</td>
+        </tr>`).join('')}
+      </tbody></table>
+      <div class="footnote">${proj.anyActual? '' : 'Belum ada bulan aktual tahun ini — rata-rata harian belum bisa dihitung.'}</div>
+    </div>
+
+    <div class="section-title" style="margin-top:18px;">Proyeksi Realisasi per Bulan</div>
+    <div class="card">
+      <div style="max-height:460px;overflow:auto;">
+      <table><thead><tr>
+        <th>Bulan</th><th class="right">Hari Kerja</th>
+        ${KOMPONEN_CATS.map(k=>`<th class="right">${KOMPONEN_LABELS[k]}</th>`).join('')}
+        <th class="right">Total</th><th>Status</th>
+      </tr></thead>
+      <tbody>${proj.monthly.map(row=>`
+        <tr>
+          <td>${MONTHS[row.bulan-1]}</td>
+          <td class="right mono">${row.hari}</td>
+          ${KOMPONEN_CATS.map(k=>`<td class="right mono">${fmtRp(row.cats[k])}</td>`).join('')}
+          <td class="right mono"><b>${fmtRp(row.total)}</b></td>
+          <td><span class="badge ${row.status==='aktual'?'badge-pkb':'badge-esamsat'}">${row.status==='aktual'?'Aktual':'Proyeksi'}</span></td>
+        </tr>`).join('')}
+      </tbody>
+      <tfoot><tr style="border-top:2px solid var(--line);">
+        <td><b>Total Setahun</b></td><td class="right mono"><b>${proj.monthly.reduce((a,r)=>a+r.hari,0)}</b></td>
+        ${KOMPONEN_CATS.map(k=>`<td class="right mono"><b>${fmtRp(proj.totalPerCat[k])}</b></td>`).join('')}
+        <td class="right mono"><b>${fmtRp(proj.totalSetahun)}</b></td><td></td>
+      </tr></tfoot>
+      </table>
+      </div>
     </div>
 
     <div class="grid grid-2" style="margin-top:14px;">
@@ -1953,35 +2089,30 @@ function renderKomponen(c){
       <div class="card">
         <div class="kpi-label" style="margin-bottom:8px;">Komposisi Setahun (Aktual + Proyeksi)</div>
         <table><thead><tr><th>Komponen</th><th class="right">Rp</th><th class="right">%</th></tr></thead>
-        <tbody>${KOMPONEN_CATS.map(k=>`<tr><td>${KOMPONEN_LABELS[k]}</td><td class="right mono">${fmtRp(totalPerCat[k])}</td><td class="right">${proj.totalSetahun>0?fmtPct(totalPerCat[k]/proj.totalSetahun*100):'–'}</td></tr>`).join('')}
+        <tbody>${KOMPONEN_CATS.map(k=>`<tr><td>${KOMPONEN_LABELS[k]}</td><td class="right mono">${fmtRp(proj.totalPerCat[k])}</td><td class="right">${proj.totalSetahun>0?fmtPct(proj.totalPerCat[k]/proj.totalSetahun*100):'–'}</td></tr>`).join('')}
         <tr><td><b>Total</b></td><td class="right mono"><b>${fmtRp(proj.totalSetahun)}</b></td><td class="right">100%</td></tr></tbody></table>
       </div>
     </div>
-
-    <div class="card" style="margin-top:14px;">
-      <div class="kpi-label" style="margin-bottom:10px;">Rincian per Bulan</div>
-      <div style="max-height:420px;overflow:auto;">
-      <table><thead><tr><th>Bulan</th><th>Status</th>${KOMPONEN_CATS.map(k=>`<th class="right">${KOMPONEN_LABELS[k]}</th>`).join('')}<th class="right">Total</th></tr></thead>
-      <tbody>${proj.monthly.map(row=>`
-        <tr>
-          <td>${MONTHS[row.bulan-1]}</td>
-          <td><span class="badge ${row.status==='aktual'?'badge-pkb':'badge-esamsat'}">${row.status==='aktual'?'Aktual':'Proyeksi'}</span></td>
-          ${KOMPONEN_CATS.map(k=>`<td class="right mono">${fmtRp(row.cats[k])}</td>`).join('')}
-          <td class="right mono"><b>${fmtRp(row.total)}</b></td>
-        </tr>`).join('')}
-      </tbody></table>
-      </div>
-    </div>
-    <div class="footnote">Hari kerja dihitung Senin–Sabtu. Rata-rata harian dihitung ulang otomatis setiap ada bulan baru yang terealisasi.</div>
+    <div class="footnote">Jumlah hari kerja mengikuti Kalender Hari Kerja (menu 📅 di atas). Rata-rata harian dihitung ulang otomatis setiap ada bulan baru yang terealisasi.</div>
   `;
-  makeChart('chart-komponen', {type:'doughnut', data:{labels:KOMPONEN_CATS.map(k=>KOMPONEN_LABELS[k]), datasets:[{data:KOMPONEN_CATS.map(k=>totalPerCat[k]), backgroundColor:CHART_COLORS}]},
+  makeChart('chart-komponen', {type:'doughnut', data:{labels:KOMPONEN_CATS.map(k=>KOMPONEN_LABELS[k]), datasets:[{data:KOMPONEN_CATS.map(k=>proj.totalPerCat[k]), backgroundColor:CHART_COLORS}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:11}}}}}});
 
-  c.querySelectorAll('[data-preset]').forEach(btn=>{
-    btn.onclick = ()=>{ state.komponenAdjustPct = parseFloat(btn.getAttribute('data-preset')); renderTab(); };
+  c.querySelectorAll('.komp-adjust-input').forEach(inp=>{
+    inp.onchange = e=>{
+      const kat = inp.getAttribute('data-kat');
+      const v = parseFloat(e.target.value);
+      state.komponenAdjustPct[kat] = isNaN(v)?0:v;
+      renderTab();
+    };
   });
-  const inAdjust = document.getElementById('in-komponen-adjust');
-  if(inAdjust) inAdjust.onchange = e=>{ const v=parseFloat(e.target.value); state.komponenAdjustPct = isNaN(v)?0:v; renderTab(); };
+  c.querySelectorAll('[data-preset-all]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const v = parseFloat(btn.getAttribute('data-preset-all'));
+      KOMPONEN_CATS.forEach(k=> state.komponenAdjustPct[k] = v);
+      renderTab();
+    };
+  });
 }
 
 /* ---------- init ---------- */
