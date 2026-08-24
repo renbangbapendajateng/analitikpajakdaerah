@@ -166,9 +166,9 @@ tr:last-child td{border-bottom:none;}
       </div>
     </div>
     <div class="actions-row">
-      <button class="btn btn-primary" id="btn-upload">⬆ Upload Data (bisa banyak file sekaligus)</button>
-      <button class="btn btn-ghost" id="btn-target">🎯 Atur Target (manual)</button>
-      <button class="btn btn-ghost" id="btn-target-upload">📥 Upload Target (Excel)</button>
+      <button class="btn btn-primary" id="btn-upload">⬆ Upload Data</button>
+      <button class="btn btn-ghost" id="btn-target">🎯 Update Target</button>
+      <button class="btn btn-ghost" id="btn-target-upload" style="display:none;">📥 Upload Target (Excel)</button>
       <button class="btn btn-ghost" id="btn-manage">🗂 Kelola Data</button>
     </div>
     <input type="file" id="fileInput" multiple accept=".xlsx,.xls">
@@ -301,9 +301,11 @@ function matchCanonicalFromRaw(raw){
 
 const TABS = [
   {id:'capaian', label:'Capaian PKB'},
-  {id:'komponen', label:'Per Komponen'},
+  {id:'komponen', label:'Analisis / Proyeksi'},
   {id:'opsen', label:'Opsen PKB'},
   {id:'capaian_bbnkb', label:'Capaian BBNKB'},
+  {id:'analisis_bbnkb', label:'Analisis / Proyeksi'},
+  {id:'opsen_bbnkb', label:'Opsen BBNKB'},
 ];
 
 let state = {
@@ -312,13 +314,15 @@ let state = {
   tahun: new Date().getFullYear(),
   bulan: 1,
   mode: 'kumulatif', // or 'bulanan'
-  opsenEntity: '__ALL__', // local filter for Opsen tab (35 entitas)
+  opsenEntity: '__ALL__', // local filter for Opsen PKB tab (35 entitas)
+  opsenBbnkbEntity: '__ALL__', // local filter for Opsen BBNKB tab (35 entitas)
   hariElapsedOverride: null, // manual override for "jumlah hari" berjalan
   hariRemainOverride: null,  // manual override for "jumlah hari" sisa
-  komponenAdjustPct: 0, // penyesuaian % untuk bulan yang belum terealisasi di tab Per Komponen
+  komponenAdjustPct: 0, // penyesuaian % untuk bulan yang belum terealisasi di tab Analisis/Proyeksi PKB
+  bbnkbAdjustPct: 0, // penyesuaian % untuk bulan yang belum terealisasi di tab Analisis/Proyeksi BBNKB
 };
 
-let DB = { pd05: [], komponen: [], bbnkb: [], targetsPkb: {}, targetsOpsen: {}, targetsBbnkb: {}, targetsOpsenBbnkb: {}, targetsPap: {}, uppdList: [] };
+let DB = { pd05: [], komponen: [], bbnkb: [], bbnkbOpsen: [], targetsPkb: {}, targetsOpsen: {}, targetsBbnkb: {}, targetsOpsenBbnkb: {}, targetsPap: {}, uppdList: [] };
 const charts = {}; // canvas id -> Chart instance
 
 /* ---------- utils ---------- */
@@ -382,7 +386,7 @@ async function deleteRecord(key){
   }catch(e){ console.error('storage delete failed', key, e); }
 }
 async function loadAllFromStorage(){
-  DB = { pd05: [], komponen: [], bbnkb: [], targetsPkb: {}, targetsOpsen: {}, targetsBbnkb: {}, targetsOpsenBbnkb: {}, targetsPap: {}, uppdList: [] };
+  DB = { pd05: [], komponen: [], bbnkb: [], bbnkbOpsen: [], targetsPkb: {}, targetsOpsen: {}, targetsBbnkb: {}, targetsOpsenBbnkb: {}, targetsPap: {}, uppdList: [] };
   try{
     let entries = []; // [{key, value}]
     if(USE_FIREBASE){
@@ -402,6 +406,7 @@ async function loadAllFromStorage(){
         const val = JSON.parse(value);
         if(k.startsWith('pd05:')) DB.pd05.push(val);
         else if(k.startsWith('komponen:')) DB.komponen.push(val);
+        else if(k.startsWith('bbnkb_opsen:')) DB.bbnkbOpsen.push(val);
         else if(k.startsWith('bbnkb:')) DB.bbnkb.push(val);
         else if(k.startsWith('target:pkb:')) DB.targetsPkb[val.uppdSlug+'_'+val.tahun] = val;
         else if(k.startsWith('target:opsen:')) DB.targetsOpsen[val.entitySlug+'_'+val.tahun] = val;
@@ -422,7 +427,7 @@ async function loadAllFromStorage(){
   }catch(e){ console.error('storage list failed', e); }
   // rebuild uppdList from records too, in case uppdlist key missing entries
   const seen = new Set(DB.uppdList.map(u=>u.slug));
-  [...DB.pd05, ...DB.komponen, ...DB.bbnkb].forEach(r=>{
+  [...DB.pd05, ...DB.komponen, ...DB.bbnkb, ...DB.bbnkbOpsen].forEach(r=>{
     if(r.uppdSlug && !seen.has(r.uppdSlug)){ seen.add(r.uppdSlug); DB.uppdList.push({slug:r.uppdSlug,name:r.uppd}); }
   });
 }
@@ -518,6 +523,7 @@ function parseBBNKB(rows, filename){
     const canonical = matchCanonicalFromRaw(uppd);
     if(canonical) uppd = canonical;
   }
+  const kategori = /OPSEN/i.test(filename) ? 'opsen_bbnkb' : 'bbnkb';
   const items=[]; let totalBaru=null, totalNonBaru=null, totalKeseluruhan=null;
   let section=null;
   for(let i=0;i<rows.length;i++){
@@ -536,7 +542,7 @@ function parseBBNKB(rows, filename){
       else if(/^JUMLAH BBN BULAN INI$/i.test(label)) totalKeseluruhan = bbnkbItemFromRow(r);
     }
   }
-  return {type:'bbnkb', uppd, bulan, tahun, items, totalBaru, totalNonBaru, totalKeseluruhan, filename};
+  return {type:'bbnkb', kategori, uppd, bulan, tahun, items, totalBaru, totalNonBaru, totalKeseluruhan, filename};
 }
 function extractKomponenCols(r){
   return {
@@ -721,7 +727,11 @@ function openBatchConfirmModal(results){
         <option value="pkb" ${p.kategori==='pkb'?'selected':''}>PKB Reguler</option>
         <option value="opsen" ${p.kategori==='opsen'?'selected':''}>Opsen PKB</option>
         <option value="esamsat" ${p.kategori==='esamsat'?'selected':''}>E-Samsat</option>
-      </select>` : p.type==='bbnkb' ? `<span class="row-status">BBNKB (Baru + Non Baru)</span>` : `<span class="row-status">Komponen/Piutang</span>`;
+      </select>` : p.type==='bbnkb' ? `
+      <select data-i="${i}" class="bt-kategori-bbnkb">
+        <option value="bbnkb" ${p.kategori==='bbnkb'?'selected':''}>BBNKB Reguler</option>
+        <option value="opsen_bbnkb" ${p.kategori==='opsen_bbnkb'?'selected':''}>Opsen BBNKB</option>
+      </select>` : `<span class="row-status">Komponen/Piutang</span>`;
     return `
       <tr data-row="${i}">
         <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.filename}">${r.filename}</td>
@@ -796,10 +806,19 @@ function openBatchConfirmModal(results){
         DB.pd05 = DB.pd05.filter(r=>!(r.kategori===p.kategori && r.uppdSlug===uppdSlug && r.tahun===tahun && r.bulan===bulan));
         DB.pd05.push(p);
       } else if(p.type==='bbnkb'){
-        const key = `bbnkb:${uppdSlug}:${tahun}:${bulan}`;
-        await saveRecord(key, p);
-        DB.bbnkb = DB.bbnkb.filter(r=>!(r.uppdSlug===uppdSlug && r.tahun===tahun && r.bulan===bulan));
-        DB.bbnkb.push(p);
+        const katSelB = tr.querySelector('.bt-kategori-bbnkb');
+        p.kategori = katSelB ? katSelB.value : (p.kategori||'bbnkb');
+        if(p.kategori==='opsen_bbnkb'){
+          const key = `bbnkb_opsen:${uppdSlug}:${tahun}:${bulan}`;
+          await saveRecord(key, p);
+          DB.bbnkbOpsen = DB.bbnkbOpsen.filter(r=>!(r.uppdSlug===uppdSlug && r.tahun===tahun && r.bulan===bulan));
+          DB.bbnkbOpsen.push(p);
+        } else {
+          const key = `bbnkb:${uppdSlug}:${tahun}:${bulan}`;
+          await saveRecord(key, p);
+          DB.bbnkb = DB.bbnkb.filter(r=>!(r.uppdSlug===uppdSlug && r.tahun===tahun && r.bulan===bulan));
+          DB.bbnkb.push(p);
+        }
       } else {
         const key = `komponen:${uppdSlug}:${tahun}:${bulan}`;
         await saveRecord(key, p);
@@ -841,7 +860,7 @@ function openTargetUploadModal(parsed){
     <p class="footnote" style="color:var(--red-600);">
       ${parsed.unmatchedPkb.length? `Tidak dikenali di sheet Rekap Target: ${parsed.unmatchedPkb.join(', ')}. ` : ''}
       ${parsed.unmatchedOpsen.length? `Tidak dikenali di sheet Opsen: ${parsed.unmatchedOpsen.join(', ')}.` : ''}
-      Baris ini dilewati — bisa diisi manual lewat "Atur Target".
+      Baris ini dilewati — bisa diisi manual lewat "Update Target".
     </p>` : '';
   root.innerHTML = `
   <div class="modal-backdrop" id="tgu-backdrop">
@@ -897,7 +916,7 @@ function openTargetModal(){
   root.innerHTML = `
   <div class="modal-backdrop" id="tg-backdrop">
     <div class="modal">
-      <h3>Atur Target</h3>
+      <h3>Update Target</h3>
       <p class="hint">Target tahunan (Pokok). PKB menggunakan 37 UPPD; Opsen menggunakan 35 Kab/Kota (Kota Semarang I/II/III digabung).</p>
       <div class="field"><label>Jenis Pajak</label>
         <select id="tg-kategori">
@@ -969,8 +988,9 @@ function openManageModal(){
     ...DB.pd05.map(r=>({...r, _key:`pd05:${r.kategori}:${r.uppdSlug}:${r.tahun}:${r.bulan}`, _kind:r.kategori})),
     ...DB.komponen.map(r=>({...r, _key:`komponen:${r.uppdSlug}:${r.tahun}:${r.bulan}`, _kind:'komponen'})),
     ...DB.bbnkb.map(r=>({...r, _key:`bbnkb:${r.uppdSlug}:${r.tahun}:${r.bulan}`, _kind:'bbnkb'})),
+    ...DB.bbnkbOpsen.map(r=>({...r, _key:`bbnkb_opsen:${r.uppdSlug}:${r.tahun}:${r.bulan}`, _kind:'opsen_bbnkb'})),
   ].sort((a,b)=> (b.tahun-a.tahun) || (b.bulan-a.bulan) || a.uppd.localeCompare(b.uppd));
-  const badgeClass = {pkb:'badge-pkb',opsen:'badge-opsen',esamsat:'badge-esamsat',komponen:'badge-komponen',bbnkb:'badge-bbnkb'};
+  const badgeClass = {pkb:'badge-pkb',opsen:'badge-opsen',esamsat:'badge-esamsat',komponen:'badge-komponen',bbnkb:'badge-bbnkb',opsen_bbnkb:'badge-bbnkb'};
   const rows = all.map(r=>`
     <div class="data-mgr-row">
       <span><span class="badge ${badgeClass[r._kind]}">${r._kind}</span> ${r.uppd} — ${MONTHS_SHORT[r.bulan-1]} ${r.tahun}</span>
@@ -994,6 +1014,7 @@ function openManageModal(){
       DB.pd05 = DB.pd05.filter(r=>`pd05:${r.kategori}:${r.uppdSlug}:${r.tahun}:${r.bulan}` !== key);
       DB.komponen = DB.komponen.filter(r=>`komponen:${r.uppdSlug}:${r.tahun}:${r.bulan}` !== key);
       DB.bbnkb = DB.bbnkb.filter(r=>`bbnkb:${r.uppdSlug}:${r.tahun}:${r.bulan}` !== key);
+      DB.bbnkbOpsen = DB.bbnkbOpsen.filter(r=>`bbnkb_opsen:${r.uppdSlug}:${r.tahun}:${r.bulan}` !== key);
       openManageModal(); renderTab();
     };
   });
@@ -1175,6 +1196,68 @@ function targetBbnkbFor(uppdSlug, tahun){
   return t? t.targetBbnkb : null;
 }
 
+/* ---------- Opsen BBNKB query helpers (35 entitas, Semarang I/II/III digabung — sama seperti Opsen PKB) ---------- */
+function bbnkbOpsenMonthlyTotal(entitySlug, tahun, bulan){
+  const rawSlugs = entitySlug==='__ALL__' ? null : rawUppdSlugsForOpsenEntity(entitySlug);
+  const recs = DB.bbnkbOpsen.filter(r=> r.tahun===tahun && r.bulan===bulan && r.totalKeseluruhan && (rawSlugs? rawSlugs.includes(r.uppdSlug) : true));
+  if(recs.length===0) return null;
+  let obyek=0,pokok=0,sanksi=0;
+  recs.forEach(r=>{ obyek+=r.totalKeseluruhan.penerimaan.oby; pokok+=r.totalKeseluruhan.penerimaan.pokok; sanksi+=r.totalKeseluruhan.penerimaan.sanksi; });
+  return {obyek,pokok,sanksi};
+}
+function bbnkbOpsenCumulativeTotal(entitySlug, tahun, bulan){
+  let obyek=0,pokok=0,sanksi=0,any=false;
+  for(let m=1;m<=bulan;m++){
+    const t = bbnkbOpsenMonthlyTotal(entitySlug,tahun,m);
+    if(t){ obyek+=t.obyek; pokok+=t.pokok; sanksi+=t.sanksi; any=true; }
+  }
+  return any? {obyek,pokok,sanksi} : null;
+}
+function bbnkbOpsenRealisasi(entitySlug, tahun, bulan, mode){
+  const rec = mode==='kumulatif' ? bbnkbOpsenCumulativeTotal(entitySlug,tahun,bulan) : bbnkbOpsenMonthlyTotal(entitySlug,tahun,bulan);
+  return rec ? rec.pokok : null;
+}
+function targetOpsenBbnkbFor(entitySlug, tahun){
+  if(entitySlug==='__ALL__'){
+    let sum=0, any=false;
+    Object.values(DB.targetsOpsenBbnkb).forEach(t=>{ if(t.tahun===tahun){ sum+=t.targetOpsenBbnkb; any=true; } });
+    return any? sum : null;
+  }
+  const t = DB.targetsOpsenBbnkb[entitySlug+'_'+tahun];
+  return t? t.targetOpsenBbnkb : null;
+}
+
+/* ---------- Analisis/Proyeksi BBNKB: rata-rata harian x hari kerja, bisa disesuaikan % ---------- */
+// (Placeholder untuk faktor GAIKINDO/AISI/pertumbuhan ekonomi — menyusul setelah data historisnya diupload.)
+function bbnkbProjection(uppdSlug, tahun, adjustPct){
+  let sumBaru=0, sumNonBaru=0, sumHari=0, anyActual=false;
+  const monthly=[];
+  for(let m=1;m<=12;m++){
+    const recs = bbnkbRecords(uppdSlug).filter(r=>r.tahun===tahun && r.bulan===m && (r.kategori||'bbnkb')==='bbnkb');
+    const hari = workingDaysInMonth(tahun,m);
+    if(recs.length){
+      let baru=0, nonBaru=0;
+      recs.forEach(r=>{ if(r.totalBaru) baru+=r.totalBaru.penerimaan.pokok; if(r.totalNonBaru) nonBaru+=r.totalNonBaru.penerimaan.pokok; });
+      sumBaru+=baru; sumNonBaru+=nonBaru; sumHari+=hari; anyActual=true;
+      monthly.push({bulan:m, hari, baru, nonBaru, total:baru+nonBaru, status:'aktual'});
+    } else {
+      monthly.push({bulan:m, hari, baru:0, nonBaru:0, total:0, status:'proyeksi'});
+    }
+  }
+  const rataBaru = (anyActual && sumHari>0) ? sumBaru/sumHari : 0;
+  const rataNonBaru = (anyActual && sumHari>0) ? sumNonBaru/sumHari : 0;
+  monthly.forEach(row=>{
+    if(row.status==='proyeksi'){
+      row.baru = rataBaru*row.hari*(1+(adjustPct||0)/100);
+      row.nonBaru = rataNonBaru*row.hari*(1+(adjustPct||0)/100);
+      row.total = row.baru+row.nonBaru;
+    }
+  });
+  const totalAktual = monthly.filter(r=>r.status==='aktual').reduce((a,r)=>a+r.total,0);
+  const totalProyeksi = monthly.filter(r=>r.status==='proyeksi').reduce((a,r)=>a+r.total,0);
+  return {monthly, rataBaru, rataNonBaru, anyActual, totalAktual, totalProyeksi, totalSetahun: totalAktual+totalProyeksi};
+}
+
 function targetPkbFor(uppdSlug, tahun){
   if(uppdSlug==='__ALL__'){
     let pkb=0, any=false;
@@ -1283,7 +1366,7 @@ function periodeLabel(){
 /* ---------- render: tabs content ---------- */
 function renderTab(){
   const c = document.getElementById('content');
-  const fns = {capaian:renderCapaian, komponen:renderKomponen, opsen:renderOpsenTab, capaian_bbnkb:renderCapaianBbnkb};
+  const fns = {capaian:renderCapaian, komponen:renderKomponen, opsen:renderOpsenTab, capaian_bbnkb:renderCapaianBbnkb, analisis_bbnkb:renderAnalisisBbnkb, opsen_bbnkb:renderOpsenBbnkbTab};
   c.innerHTML='';
   (fns[state.tab]||renderCapaian)(c);
 }
@@ -1399,7 +1482,7 @@ function renderCapaian(c){
 
     <div class="section-title">Capaian PKB — ${uppdLabel()}</div>
     <p class="section-desc">Target &amp; realisasi Pokok PKB, ${periodeLabel()}.</p>
-    ${d.targetTahun===null? `<div class="empty">Belum ada <b>target PKB</b> untuk ${uppdLabel()} tahun ${state.tahun}. Klik <b>Atur Target</b> di atas.</div>` : ''}
+    ${d.targetTahun===null? `<div class="empty">Belum ada <b>target PKB</b> untuk ${uppdLabel()} tahun ${state.tahun}. Klik <b>Update Target</b> di atas.</div>` : ''}
     <div class="card" style="margin-top:14px;">
       <div class="stamp-wrap">
         ${stampHtml(d.pct)}
@@ -1543,7 +1626,7 @@ function renderCapaianBbnkb(c){
 
     <div class="section-title">Capaian BBNKB — ${uppdLabel()}</div>
     <p class="section-desc">Target &amp; realisasi Pokok BBNKB (kolom Penerimaan), ${periodeLabel()}.</p>
-    ${d.targetTahun===null? `<div class="empty">Belum ada <b>target BBNKB</b> untuk ${uppdLabel()} tahun ${state.tahun}. Klik <b>Atur Target</b> atau <b>Upload Target (Excel)</b> di atas.</div>` : ''}
+    ${d.targetTahun===null? `<div class="empty">Belum ada <b>target BBNKB</b> untuk ${uppdLabel()} tahun ${state.tahun}. Klik <b>Update Target</b> di atas.</div>` : ''}
     <div class="card" style="margin-top:14px;">
       <div class="stamp-wrap">
         ${stampHtml(d.pct)}
@@ -1632,6 +1715,132 @@ function renderCapaianBbnkb(c){
   if(inRemain) inRemain.onchange = e=>{ const v=parseInt(e.target.value,10); state.hariRemainOverride = isNaN(v)?null:v; renderTab(); };
 }
 
+/* ---------- Tab: Analisis / Proyeksi BBNKB ---------- */
+function renderAnalisisBbnkb(c){
+  if(state.uppd==='__ALL__'){
+    c.innerHTML = `
+      <div class="section-title">Analisis / Proyeksi BBNKB</div>
+      <div class="empty">Pilih satu UPPD terlebih dahulu di filter atas — proyeksi rata-rata harian dihitung per UPPD.</div>`;
+    return;
+  }
+  const proj = bbnkbProjection(state.uppd, state.tahun, state.bbnkbAdjustPct);
+  const presets = [-10,-5,0,5,10,15,20];
+
+  c.innerHTML = `
+    <div class="section-title">Analisis / Proyeksi BBNKB — ${uppdLabel()}</div>
+    <p class="section-desc">Proyeksi realisasi Pokok BBNKB s.d. 31 Desember ${state.tahun}. Bulan yang sudah ada data diupload ditandai <b>Aktual</b>; bulan yang belum diisi otomatis diisi <b>Proyeksi</b> = rata-rata harian (dari bulan aktual tahun ini) × jumlah hari kerja bulan tsb.</p>
+
+    <div class="card">
+      <div class="kpi-label" style="margin-bottom:8px;">Penyesuaian Proyeksi</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+        ${presets.map(p=>`<button class="btn ${state.bbnkbAdjustPct===p?'btn-primary':'btn-secondary'}" data-preset-bbnkb="${p}" style="padding:7px 12px;">${p>0?'+':''}${p}%</button>`).join('')}
+        <span style="font-size:12.5px;color:var(--ink-600);margin-left:6px;">atau custom:</span>
+        <input type="number" id="in-bbnkb-adjust" value="${state.bbnkbAdjustPct}" style="width:80px;padding:7px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px;" step="1">
+        <span style="font-size:12.5px;color:var(--ink-600);">%</span>
+      </div>
+      <div class="footnote">Penyesuaian hanya berlaku untuk bulan berstatus Proyeksi. Rata-rata harian dasar: ${proj.anyActual? fmtRpShort(proj.rataBaru+proj.rataNonBaru)+' / hari kerja' : 'belum ada bulan aktual tahun ini'}. Faktor GAIKINDO/AISI &amp; pertumbuhan ekonomi akan ditambahkan sebagai pembanding setelah data historisnya diupload.</div>
+    </div>
+
+    <div class="grid grid-2" style="margin-top:14px;">
+      <div class="card"><div class="kpi-label">Total Aktual (bulan yang sudah ada data)</div><div class="kpi-value mono" style="font-size:17px;">${fmtRp(proj.totalAktual)}</div></div>
+      <div class="card"><div class="kpi-label">Total Proyeksi (bulan yang belum ada data)</div><div class="kpi-value mono" style="font-size:17px;">${fmtRp(proj.totalProyeksi)}</div>
+        <div class="kpi-sub">dengan penyesuaian ${state.bbnkbAdjustPct>0?'+':''}${state.bbnkbAdjustPct}%</div></div>
+    </div>
+
+    <div class="card" style="margin-top:14px;">
+      <div class="kpi-label">Proyeksi Realisasi s.d. 31 Desember ${state.tahun}</div>
+      <div class="kpi-value mono" style="font-size:22px;">${fmtRp(proj.totalSetahun)}</div>
+    </div>
+
+    <div class="card" style="margin-top:14px;">
+      <div class="kpi-label" style="margin-bottom:10px;">Rincian per Bulan</div>
+      <div style="max-height:420px;overflow:auto;">
+      <table><thead><tr><th>Bulan</th><th>Status</th><th class="right">BBNKB Baru</th><th class="right">BBNKB Non Baru</th><th class="right">Total</th></tr></thead>
+      <tbody>${proj.monthly.map(row=>`
+        <tr>
+          <td>${MONTHS[row.bulan-1]}</td>
+          <td><span class="badge ${row.status==='aktual'?'badge-pkb':'badge-esamsat'}">${row.status==='aktual'?'Aktual':'Proyeksi'}</span></td>
+          <td class="right mono">${fmtRp(row.baru)}</td>
+          <td class="right mono">${fmtRp(row.nonBaru)}</td>
+          <td class="right mono"><b>${fmtRp(row.total)}</b></td>
+        </tr>`).join('')}
+      </tbody></table>
+      </div>
+    </div>
+    <div class="footnote">Hari kerja dihitung Senin–Sabtu. Rata-rata harian dihitung ulang otomatis setiap ada bulan baru yang terealisasi.</div>
+  `;
+  c.querySelectorAll('[data-preset-bbnkb]').forEach(btn=>{
+    btn.onclick = ()=>{ state.bbnkbAdjustPct = parseFloat(btn.getAttribute('data-preset-bbnkb')); renderTab(); };
+  });
+  const inAdjust = document.getElementById('in-bbnkb-adjust');
+  if(inAdjust) inAdjust.onchange = e=>{ const v=parseFloat(e.target.value); state.bbnkbAdjustPct = isNaN(v)?0:v; renderTab(); };
+}
+
+/* ---------- Tab: Opsen BBNKB (35 entitas — sama seperti Opsen PKB) ---------- */
+function renderOpsenBbnkbTab(c){
+  const entitySlug = state.opsenBbnkbEntity;
+  const targetTahun = targetOpsenBbnkbFor(entitySlug, state.tahun);
+  const real = bbnkbOpsenRealisasi(entitySlug, state.tahun, state.bulan, state.mode);
+  const pct = (real!==null && targetTahun) ? real/targetTahun*100 : null;
+  const selisih = (real!==null && targetTahun!==null) ? (real-targetTahun) : null;
+  const entityLabel = entitySlug==='__ALL__' ? 'Semua Kab/Kota' : (OPSEN_ENTITIES.find(e=>e.slug===entitySlug)||{}).canonical || entitySlug;
+
+  const totalDiterima = bbnkbOpsenRealisasi('__ALL__', state.tahun, state.bulan, state.mode);
+
+  const rows = OPSEN_ENTITIES.map(e=>{
+    const r = bbnkbOpsenRealisasi(e.slug, state.tahun, state.bulan, state.mode);
+    const t = targetOpsenBbnkbFor(e.slug, state.tahun);
+    const p = (r!==null && t) ? r/t*100 : null;
+    const rPrev = bbnkbOpsenRealisasi(e.slug, state.tahun-1, state.bulan, state.mode);
+    const g = (r!==null && rPrev) ? (r-rPrev)/rPrev*100 : null;
+    return {name:e.canonical, real:r, pct:p, growth:g};
+  });
+  const byCapaian = rows.filter(r=>r.pct!==null).sort((a,b)=>b.pct-a.pct);
+  const byGrowth = rows.filter(r=>r.growth!==null).sort((a,b)=>b.growth-a.growth);
+
+  const entityOptions = `<option value="__ALL__">Semua Kab/Kota</option>` + OPSEN_ENTITIES.map(e=>`<option value="${e.slug}" ${entitySlug===e.slug?'selected':''}>${e.canonical}</option>`).join('');
+
+  c.innerHTML = `
+    <div class="section-title">Opsen BBNKB — ${entityLabel}</div>
+    <p class="section-desc">Target &amp; realisasi Pokok Opsen BBNKB, ${periodeLabel()}. Granularitas 35 Kab/Kota (Kota Semarang I/II/III digabung) — sama seperti Opsen PKB.</p>
+    <div class="field" style="max-width:280px;margin-bottom:14px;"><label>Filter Kab/Kota (Opsen BBNKB)</label>
+      <select id="f-opsen-bbnkb-entity">${entityOptions}</select>
+    </div>
+    ${targetTahun===null? `<div class="empty">Belum ada <b>target Opsen BBNKB</b> untuk ${entityLabel} tahun ${state.tahun}. Klik <b>Update Target</b> di atas.</div>` : ''}
+    <div class="card">
+      <div class="stamp-wrap">
+        ${stampHtml(pct)}
+        <div class="grid grid-2" style="flex:1;gap:10px;">
+          <div><div class="kpi-label">Target Tahunan</div><div class="kpi-value mono" style="font-size:16px;">${fmtRp(targetTahun)}</div></div>
+          <div><div class="kpi-label">Realisasi (Pokok)</div><div class="kpi-value mono" style="font-size:16px;">${real===null?'– belum ada data':fmtRp(real)}</div></div>
+          <div><div class="kpi-label">Selisih thd Target Tahunan</div><div class="kpi-value mono ${selisih===null?'':(selisih>=0?'pos':'neg')}" style="font-size:16px;">${selisih===null?'–':fmtRp(selisih)}</div></div>
+          <div><div class="kpi-label">Total Opsen BBNKB Diterima (Seluruh Kab/Kota)</div><div class="kpi-value mono" style="font-size:16px;">${totalDiterima===null?'– belum ada data':fmtRp(totalDiterima)}</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-title">Ranking Kab/Kota — Opsen BBNKB</div>
+    <p class="section-desc">Diurutkan berdasarkan persentase capaian dan pertumbuhan (YoY) realisasi Pokok, ${periodeLabel()}.</p>
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="kpi-label" style="margin-bottom:8px;">Ranking berdasarkan Capaian</div>
+        ${byCapaian.length===0?'<div class="empty">Belum ada Kab/Kota dengan target &amp; realisasi lengkap.</div>':
+        `<table><thead><tr><th>#</th><th>Kab/Kota</th><th class="right">% Capaian</th></tr></thead>
+        <tbody>${byCapaian.map((r,i)=>`<tr><td>${i+1}</td><td>${r.name}</td><td class="right ${r.pct>=100?'pos':''}">${fmtPct(r.pct)}</td></tr>`).join('')}</tbody></table>`}
+      </div>
+      <div class="card">
+        <div class="kpi-label" style="margin-bottom:8px;">Ranking berdasarkan Growth (YoY)</div>
+        ${byGrowth.length===0?'<div class="empty">Data tahun sebelumnya belum tersedia untuk perbandingan.</div>':
+        `<table><thead><tr><th>#</th><th>Kab/Kota</th><th class="right">% Growth</th></tr></thead>
+        <tbody>${byGrowth.map((r,i)=>`<tr><td>${i+1}</td><td>${r.name}</td><td class="right ${r.growth>=0?'pos':'neg'}">${fmtPct(r.growth)}</td></tr>`).join('')}</tbody></table>`}
+      </div>
+    </div>
+    <div class="footnote">Realisasi diambil dari file BBNKB (PD.06) berawalan/mengandung "OPSEN" yang diupload — asumsi struktur file sama dengan BBNKB reguler.</div>
+  `;
+  const sel = document.getElementById('f-opsen-bbnkb-entity');
+  if(sel) sel.onchange = e=>{ state.opsenBbnkbEntity = e.target.value; renderTab(); };
+}
+
 /* ---------- Tab 2: Opsen PKB (35 entitas, ranking, total diterima) ---------- */
 function renderOpsenTab(c){
   const entitySlug = state.opsenEntity;
@@ -1661,7 +1870,7 @@ function renderOpsenTab(c){
     <div class="field" style="max-width:280px;margin-bottom:14px;"><label>Filter Kab/Kota (Opsen)</label>
       <select id="f-opsen-entity">${entityOptions}</select>
     </div>
-    ${d.targetTahun===null? `<div class="empty">Belum ada <b>target Opsen</b> untuk ${entityLabel} tahun ${state.tahun}. Klik <b>Atur Target</b> di atas.</div>` : ''}
+    ${d.targetTahun===null? `<div class="empty">Belum ada <b>target Opsen</b> untuk ${entityLabel} tahun ${state.tahun}. Klik <b>Update Target</b> di atas.</div>` : ''}
     <div class="card">
       <div class="stamp-wrap">
         ${stampHtml(d.pct)}
