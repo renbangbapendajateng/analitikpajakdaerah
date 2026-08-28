@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="chart.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <style>
 :root{
   --navy-900:#0A1E38; --navy-800:#0F2A4A; --navy-700:#15385F; --navy-600:#1C4A7A;
@@ -53,7 +53,7 @@ h1,h2,h3,.disp{font-family:var(--font-d);}
 .btn-primary{background:var(--gold-400);color:var(--navy-900);}
 .btn-ghost{background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.25);}
 .btn-ghost:hover, .btn-primary:hover{filter:brightness(1.08);}
-#fileInput{display:none;}
+#fileInput, #targetFileInput{display:none;}
 
 /* ===== Tabs ===== */
 .tabs{display:flex;gap:4px;overflow-x:auto;margin:18px 0 4px;padding-bottom:2px;border-bottom:1px solid var(--line);}
@@ -321,10 +321,11 @@ let state = {
   opsenEntity: '__ALL__', // local filter for Opsen PKB tab (35 entitas)
   opsenBbnkbEntity: '__ALL__', // local filter for Opsen BBNKB tab (35 entitas)
   komponenAdjustPct: {}, // penyesuaian % PER KOMPONEN untuk bulan yang belum terealisasi (Analisis/Proyeksi PKB), key=kode komponen
+  tingkatBayarPotensi: '', // % keterbayaran potensi, khusus proyeksi komponen "Realisasi PU Tahun Jalan" (manual)
   bbnkbAdjustPct: 0, // penyesuaian % untuk bulan yang belum terealisasi di tab Analisis/Proyeksi BBNKB
 };
 
-let DB = { pd05: [], komponen: [], bbnkb: [], bbnkbOpsen: [], targetsPkb: {}, targetsOpsen: {}, targetsBbnkb: {}, targetsOpsenBbnkb: {}, targetsPap: {}, hariKerja: {}, uppdList: [] };
+let DB = { pd05: [], komponen: [], bbnkb: [], bbnkbOpsen: [], potensi: [], targetsPkb: {}, targetsOpsen: {}, targetsBbnkb: {}, targetsOpsenBbnkb: {}, targetsPap: {}, hariKerja: {}, uppdList: [] };
 const charts = {}; // canvas id -> Chart instance
 
 /* ---------- utils ---------- */
@@ -407,7 +408,7 @@ async function deleteRecord(key){
   }catch(e){ console.error('storage delete failed', key, e); }
 }
 async function loadAllFromStorage(){
-  DB = { pd05: [], komponen: [], bbnkb: [], bbnkbOpsen: [], targetsPkb: {}, targetsOpsen: {}, targetsBbnkb: {}, targetsOpsenBbnkb: {}, targetsPap: {}, hariKerja: {}, uppdList: [] };
+  DB = { pd05: [], komponen: [], bbnkb: [], bbnkbOpsen: [], potensi: [], targetsPkb: {}, targetsOpsen: {}, targetsBbnkb: {}, targetsOpsenBbnkb: {}, targetsPap: {}, hariKerja: {}, uppdList: [] };
   try{
     let entries = []; // [{key, value}]
     if(USE_FIREBASE){
@@ -428,6 +429,7 @@ async function loadAllFromStorage(){
         if(k.startsWith('pd05:')) DB.pd05.push(val);
         else if(k.startsWith('komponen:')) DB.komponen.push(val);
         else if(k.startsWith('bbnkb_opsen:')) DB.bbnkbOpsen.push(val);
+        else if(k.startsWith('potensi:')) DB.potensi.push(val);
         else if(k.startsWith('bbnkb:')) DB.bbnkb.push(val);
         else if(k.startsWith('target:pkb:')) DB.targetsPkb[val.uppdSlug+'_'+val.tahun] = val;
         else if(k.startsWith('target:opsen:')) DB.targetsOpsen[val.entitySlug+'_'+val.tahun] = val;
@@ -462,10 +464,11 @@ async function upsertUppdList(slug, name){
 
 /* ---------- parsers ---------- */
 function detectFileType(rows){
-  const flat = rows.slice(0,15).map(r=>(r||[]).map(c=>c==null?'':String(c)).join(' | ')).join('\n');
+  const flat = rows.slice(0,25).map(r=>(r||[]).map(c=>c==null?'':String(c)).join(' | ')).join('\n');
   if(/Kertas Kerja Piutang/i.test(flat)) return 'komponen';
   if(/PENETAPAN,\s*PENGURANGAN,\s*PENERIMAAN DAN TUNGGAKAN BEA BALIK NAMA/i.test(flat)) return 'bbnkb';
   if(/REKAPITULASI PENERIMAAN PAJAK KENDARAAN BERMOTOR/i.test(flat)) return 'pd05';
+  if(/Monitoring data kendaraan per jenis/i.test(flat)) return 'potensi';
   return 'unknown';
 }
 function pd05Block(r,o){ return {obyek:toNum(r[o]),pokok:toNum(r[o+1]),sanksi:toNum(r[o+2]),jumlah:toNum(r[o+3])}; }
@@ -625,6 +628,52 @@ function parseKomponen(rows, filename){
   uppdGuess = matched || base;
   return {type:'komponen', uppd:uppdGuess, bulan, tahun, items, total, filename};
 }
+
+/* ---------- Potensi (dashboard "Monitoring data kendaraan per jenis") parser ---------- */
+function parsePotensi(rows, filename){
+  let uppdLine=null, totalObjek=null, totalPkb=null, totalOpsen=null, headerIdx=-1;
+  for(let i=0;i<rows.length;i++){
+    const c0 = rows[i] && rows[i][0];
+    if(typeof c0==='string' && /^UPPD\s+/i.test(c0.trim())) uppdLine = c0.trim();
+    if(typeof c0==='string' && /^Total Objek$/i.test(c0.trim()) && rows[i+1]) totalObjek = toNum(rows[i+1][0]);
+    if(typeof c0==='string' && /^Total PKB$/i.test(c0.trim()) && rows[i+1]) totalPkb = toNum(rows[i+1][0]);
+    if(typeof c0==='string' && /^Total Opsen$/i.test(c0.trim()) && rows[i+1]) totalOpsen = toNum(rows[i+1][0]);
+    if(headerIdx===-1 && (rows[i]||[]).some(c=>c==='Kode') && (rows[i]||[]).some(c=>c==='Keterangan')) headerIdx = i;
+  }
+  const items = [];
+  if(headerIdx>=0){
+    for(let i=headerIdx+1;i<rows.length;i++){
+      const r = rows[i]||[];
+      const kode = r[0];
+      if(typeof kode==='string' && /^TOTAL$/i.test(kode.trim())) break;
+      if(typeof kode!=='string' || !kode.trim()) continue;
+      items.push({kode:kode.trim(), keterangan:(r[1]||'').toString().trim(), objek:toNum(r[2]), pkbProvinsi:toNum(r[3]), pkbOpsen:toNum(r[4])});
+    }
+  }
+  let uppd=null;
+  if(uppdLine){
+    uppd = uppdLine.replace(/^UPPD\s*/i,'').trim();
+    const canonical = matchCanonicalFromRaw(uppd);
+    if(canonical) uppd = canonical;
+  }
+  // best-effort guess bulan/tahun/uppd dari nama file (sama seperti file komponen)
+  let bulan=null, tahun=null;
+  const lower = filename.toLowerCase();
+  for(let m=0;m<MONTHS.length;m++){ if(lower.includes(MONTHS[m].toLowerCase())){ bulan=m+1; break; } }
+  const ym = filename.match(/(20\d{2})/); if(ym) tahun = parseInt(ym[1],10);
+  if(!uppd){
+    const base = filename.replace(/\.xlsx?$/i,'');
+    let baseNorm = base.toUpperCase().replace(/[_\-]+/g,' ').replace(/\s+/g,' ').trim();
+    baseNorm = baseNorm.replace(/\bSEMARANG\s+1\b/,'SEMARANG I').replace(/\bSEMARANG\s+2\b/,'SEMARANG II').replace(/\bSEMARANG\s+3\b/,'SEMARANG III');
+    let matched = UPPD_ORDER.find(c=> new RegExp('(^|[^A-Z])'+c.replace(/\s+/g,'\\s+')+'([^A-Z]|$)').test(baseNorm));
+    if(!matched){
+      const rawKey = Object.keys(UPPD_RAW_TO_CANONICAL).find(raw=> baseNorm.includes(raw));
+      if(rawKey) matched = UPPD_RAW_TO_CANONICAL[rawKey];
+    }
+    uppd = matched || base;
+  }
+  return {type:'potensi', uppd, bulan, tahun, totalObjek, totalPkb, totalOpsen, items, filename};
+}
 async function readWorkbook(file){
   const buf = await file.arrayBuffer();
   const wb = XLSX.read(buf, {type:'array'});
@@ -724,6 +773,7 @@ async function handleFiles(fileList){
       let parsed;
       if(kind==='pd05') parsed = parsePD05(rows, file.name);
       else if(kind==='bbnkb') parsed = parseBBNKB(rows, file.name);
+      else if(kind==='potensi') parsed = parsePotensi(rows, file.name);
       else parsed = parseKomponen(rows, file.name);
       results.push({filename:file.name, parsed});
     }catch(e){ console.error(e); results.push({filename:file.name, error:'Gagal membaca berkas'}); }
@@ -753,7 +803,7 @@ function openBatchConfirmModal(results){
       <select data-i="${i}" class="bt-kategori-bbnkb">
         <option value="bbnkb" ${p.kategori==='bbnkb'?'selected':''}>BBNKB Reguler</option>
         <option value="opsen_bbnkb" ${p.kategori==='opsen_bbnkb'?'selected':''}>Opsen BBNKB</option>
-      </select>` : `<span class="row-status">Komponen/Piutang</span>`;
+      </select>` : p.type==='potensi' ? `<span class="row-status">Potensi (per Kode Kendaraan)</span>` : `<span class="row-status">Komponen/Piutang</span>`;
     return `
       <tr data-row="${i}">
         <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.filename}">${r.filename}</td>
@@ -879,6 +929,11 @@ function openBatchConfirmModal(results){
           DB.bbnkb = DB.bbnkb.filter(r=>!(r.uppdSlug===uppdSlug && r.tahun===tahun && r.bulan===bulan));
           DB.bbnkb.push(p);
         }
+      } else if(p.type==='potensi'){
+        const key = `potensi:${uppdSlug}:${tahun}:${bulan}`;
+        await saveRecord(key, p);
+        DB.potensi = DB.potensi.filter(r=>!(r.uppdSlug===uppdSlug && r.tahun===tahun && r.bulan===bulan));
+        DB.potensi.push(p);
       } else {
         const key = `komponen:${uppdSlug}:${tahun}:${bulan}`;
         await saveRecord(key, p);
@@ -1111,8 +1166,9 @@ function openManageModal(){
     ...DB.komponen.map(r=>({...r, _key:`komponen:${r.uppdSlug}:${r.tahun}:${r.bulan}`, _kind:'komponen'})),
     ...DB.bbnkb.map(r=>({...r, _key:`bbnkb:${r.uppdSlug}:${r.tahun}:${r.bulan}`, _kind:'bbnkb'})),
     ...DB.bbnkbOpsen.map(r=>({...r, _key:`bbnkb_opsen:${r.uppdSlug}:${r.tahun}:${r.bulan}`, _kind:'opsen_bbnkb'})),
+    ...DB.potensi.map(r=>({...r, _key:`potensi:${r.uppdSlug}:${r.tahun}:${r.bulan}`, _kind:'potensi'})),
   ].sort((a,b)=> (b.tahun-a.tahun) || (b.bulan-a.bulan) || a.uppd.localeCompare(b.uppd));
-  const badgeClass = {pkb:'badge-pkb',opsen:'badge-opsen',esamsat:'badge-esamsat',komponen:'badge-komponen',bbnkb:'badge-bbnkb',opsen_bbnkb:'badge-bbnkb'};
+  const badgeClass = {pkb:'badge-pkb',opsen:'badge-opsen',esamsat:'badge-esamsat',komponen:'badge-komponen',bbnkb:'badge-bbnkb',opsen_bbnkb:'badge-bbnkb',potensi:'badge-opsen'};
   const rows = all.map(r=>`
     <div class="data-mgr-row">
       <span><span class="badge ${badgeClass[r._kind]}">${r._kind}</span> ${r.uppd} — ${MONTHS_SHORT[r.bulan-1]} ${r.tahun}</span>
@@ -1122,7 +1178,7 @@ function openManageModal(){
   <div class="modal-backdrop" id="mg-backdrop">
     <div class="modal" style="max-width:560px;">
       <h3>Kelola Data Terupload</h3>
-      <p class="hint">${all.length} berkas tersimpan di penyimpanan lokal browser ini.</p>
+      <p class="hint">${all.length} berkas tersimpan di ${USE_FIREBASE ? 'Firestore (cloud)' : 'penyimpanan Claude'}.</p>
       <div style="max-height:50vh;overflow:auto;">${rows}</div>
       <div class="modal-actions"><button class="btn-secondary" id="mg-close">Tutup</button></div>
     </div>
@@ -1137,6 +1193,7 @@ function openManageModal(){
       DB.komponen = DB.komponen.filter(r=>`komponen:${r.uppdSlug}:${r.tahun}:${r.bulan}` !== key);
       DB.bbnkb = DB.bbnkb.filter(r=>`bbnkb:${r.uppdSlug}:${r.tahun}:${r.bulan}` !== key);
       DB.bbnkbOpsen = DB.bbnkbOpsen.filter(r=>`bbnkb_opsen:${r.uppdSlug}:${r.tahun}:${r.bulan}` !== key);
+      DB.potensi = DB.potensi.filter(r=>`potensi:${r.uppdSlug}:${r.tahun}:${r.bulan}` !== key);
       openManageModal(); renderTab();
     };
   });
@@ -1224,7 +1281,16 @@ const KOMPONEN_LABELS = {
 // Proyeksi per komponen per bulan: bulan dengan data -> aktual; bulan tanpa data -> rata2 harian (dari bulan
 // yang sudah terealisasi tahun berjalan) x hari kerja bulan tsb (Kalender Hari Kerja), dengan penyesuaian % PER KOMPONEN.
 // adjustPctByMonthCat: key = `${bulan}_${kode_komponen}` -> persen penyesuaian (hanya berlaku untuk bulan berstatus proyeksi)
-function komponenProjection(uppdSlug, tahun, adjustPctByMonthCat){
+// Total potensi (PKB Provinsi) untuk 1 UPPD (atau __ALL__) pada bulan/tahun tertentu.
+function potensiTotalFor(uppdSlug, tahun, bulan){
+  const recs = DB.potensi.filter(r=> r.tahun===tahun && r.bulan===bulan && (uppdSlug==='__ALL__' || r.uppdSlug===uppdSlug));
+  if(recs.length===0) return null;
+  return recs.reduce((a,r)=>a+(r.totalPkb||0),0);
+}
+// adjustPctByMonthCat: key = `${bulan}_${kode_komponen}` -> persen penyesuaian (hanya berlaku untuk bulan berstatus proyeksi)
+// tingkatBayarPotensi: persen (mis. 85) -> KHUSUS komponen 'tahun_jalan': proyeksi = potensi bulan tsb x persen ini,
+//   menggantikan cara rata-rata harian. Kalau data potensi bulan tsb belum ada, otomatis fallback ke rata-rata harian.
+function komponenProjection(uppdSlug, tahun, adjustPctByMonthCat, tingkatBayarPotensi){
   adjustPctByMonthCat = adjustPctByMonthCat || {};
   let sumPerCat={}; KOMPONEN_CATS.forEach(k=>sumPerCat[k]=0);
   let sumHari=0, anyActual=false;
@@ -1244,13 +1310,21 @@ function komponenProjection(uppdSlug, tahun, adjustPctByMonthCat){
   const rataHarian = {}; KOMPONEN_CATS.forEach(k=> rataHarian[k] = (anyActual && sumHari>0) ? sumPerCat[k]/sumHari : 0);
   monthly.forEach(row=>{
     if(row.status==='proyeksi'){
-      const cats = {}; const pcts = {};
+      const cats = {}; const pcts = {}; const basis = {};
       KOMPONEN_CATS.forEach(k=>{
+        if(k==='tahun_jalan' && tingkatBayarPotensi!=null && tingkatBayarPotensi!==''){
+          const potensi = potensiTotalFor(uppdSlug, tahun, row.bulan);
+          if(potensi!==null){
+            cats[k] = potensi * (parseFloat(tingkatBayarPotensi)/100);
+            pcts[k] = null; basis[k] = 'potensi'; row.potensiBulanIni = potensi;
+            return;
+          }
+        }
         const pct = adjustPctByMonthCat[row.bulan+'_'+k] || 0;
-        pcts[k] = pct;
+        pcts[k] = pct; basis[k] = 'harian';
         cats[k] = rataHarian[k]*row.hari*(1+pct/100);
       });
-      row.cats = cats; row.pcts = pcts;
+      row.cats = cats; row.pcts = pcts; row.basis = basis;
     }
     row.total = KOMPONEN_CATS.reduce((a,k)=>a+row.cats[k],0);
   });
@@ -2086,8 +2160,18 @@ function renderOpsenTab(c){
 
 function renderKomponen(c){
   if(!state.komponenAdjustPct) state.komponenAdjustPct = {};
-  const proj = komponenProjection(state.uppd, state.tahun, state.komponenAdjustPct);
+  const proj = komponenProjection(state.uppd, state.tahun, state.komponenAdjustPct, state.tingkatBayarPotensi);
   const quickPresets = [-15,-10,-5,0,5,10,15,20];
+
+  // -- rata-rata harian: perbandingan (s.d. bulan ini / utk target / utk proyeksi) --
+  const d = capaianBlockPkb();
+  const aktualMonths = proj.monthly.filter(r=>r.status==='aktual').map(r=>r.bulan);
+  const lastAktualBulan = aktualMonths.length ? Math.max(...aktualMonths) : 0;
+  const hariSdBulanAktual = hariKerjaRange(state.tahun, 1, lastAktualBulan);
+  const hariSisaTahun = hariKerjaRange(state.tahun, lastAktualBulan+1, 12);
+  const rataHarianSdBulan = (proj.totalAktual>0 && hariSdBulanAktual>0) ? proj.totalAktual/hariSdBulanAktual : null;
+  const rataHarianUntukTarget = (d.targetTahun!==null && hariSisaTahun>0) ? Math.max(0,(d.targetTahun-proj.totalAktual))/hariSisaTahun : null;
+  const rataHarianUntukProyeksi = (hariSisaTahun>0) ? proj.totalProyeksi/hariSisaTahun : null;
 
   c.innerHTML = `
     <div class="section-title">Analisis / Proyeksi PKB — ${uppdLabel()}</div>
@@ -2098,11 +2182,28 @@ function renderKomponen(c){
         <div class="kpi-label">Total Sudah Masuk Kas Daerah (Realisasi Aktual)</div>
         <div class="kpi-value mono" style="font-size:24px;">${fmtRp(proj.totalAktual)}</div>
         <div class="kpi-sub">${proj.monthly.filter(r=>r.status==='aktual').length} dari 12 bulan sudah ada data</div>
+        <div style="margin-top:12px;border-top:1px solid var(--line-soft);padding-top:10px;">
+          ${KOMPONEN_CATS.map(k=>`
+            <div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;font-size:12.5px;">
+              <span style="color:var(--ink-600);">${KOMPONEN_LABELS[k]}</span>
+              <span class="mono" style="font-weight:600;">${fmtRp(proj.totalAktualPerCat[k])}</span>
+            </div>`).join('')}
+        </div>
       </div>
       <div class="card">
         <div class="kpi-label" style="margin-bottom:6px;">Komposisi Realisasi Aktual</div>
         ${proj.totalAktual>0? `<div class="chart-box short"><canvas id="chart-komponen-aktual"></canvas></div>` : `<div class="empty">Belum ada bulan aktual untuk ditampilkan.</div>`}
       </div>
+    </div>
+
+    <div class="section-title" style="margin-top:18px;">Tingkat Keterbayaran Potensi (khusus komponen Realisasi PU Tahun Jalan)</div>
+    <p class="section-desc">Kalau diisi dan data <b>Potensi</b> bulan tsb sudah diupload, proyeksi komponen <b>${KOMPONEN_LABELS.tahun_jalan}</b> dihitung: Potensi bulan tsb × persentase ini — menggantikan cara rata-rata harian khusus untuk komponen ini. Kalau data Potensi bulan tsb belum ada, otomatis kembali ke rata-rata harian. 5 komponen lain tidak terpengaruh.</p>
+    <div class="card">
+      <div class="field" style="max-width:260px;margin-bottom:0;">
+        <label>Tingkat Keterbayaran (%)</label>
+        <input type="number" id="in-tingkat-bayar" value="${state.tingkatBayarPotensi}" placeholder="mis. 85" step="1" min="0" max="100">
+      </div>
+      <div class="footnote">Diisi manual berdasarkan pengalaman/kebijakan Bapenda. Kosongkan untuk memakai rata-rata harian seperti biasa.</div>
     </div>
 
     <div class="section-title" style="margin-top:18px;">Rata-rata Harian per Komponen</div>
@@ -2132,7 +2233,12 @@ function renderKomponen(c){
         <tr>
           <td>${MONTHS[row.bulan-1]}</td>
           <td class="right mono">${row.hari}</td>
-          ${KOMPONEN_CATS.map(k=> row.status==='proyeksi' ? `
+          ${KOMPONEN_CATS.map(k=> row.status==='proyeksi' ? (
+            row.basis && row.basis[k]==='potensi' ? `
+            <td class="right mono">
+              <div>${fmtRp(row.cats[k])}</div>
+              <div style="font-size:9.5px;color:var(--ink-400);margin-top:2px;" title="Potensi ${fmtRp(row.potensiBulanIni)} × ${state.tingkatBayarPotensi}%">dari potensi</div>
+            </td>` : `
             <td class="right mono">
               <div>${fmtRp(row.cats[k])}</div>
               <div style="display:flex;align-items:center;justify-content:flex-end;gap:2px;margin-top:2px;">
@@ -2140,7 +2246,8 @@ function renderKomponen(c){
                   style="width:48px;padding:2px 4px;border:1px solid var(--line);border-radius:5px;font-size:10.5px;text-align:right;" step="1">
                 <span style="font-size:10px;color:var(--ink-400);">%</span>
               </div>
-            </td>` : `<td class="right mono">${fmtRp(row.cats[k])}</td>`
+            </td>`
+          ) : `<td class="right mono">${fmtRp(row.cats[k])}</td>`
           ).join('')}
           <td class="right mono"><b>${fmtRp(row.total)}</b></td>
           <td><span class="badge ${row.status==='aktual'?'badge-pkb':'badge-esamsat'}">${row.status==='aktual'?'Aktual':'Proyeksi'}</span></td>
@@ -2159,19 +2266,27 @@ function renderKomponen(c){
       </div>
     </div>
 
-    <div class="grid grid-2" style="margin-top:14px;">
-      <div class="card"><div class="chart-box"><canvas id="chart-komponen"></canvas></div></div>
+    <div class="section-title" style="margin-top:18px;">Rata-rata Harian — Perbandingan</div>
+    <p class="section-desc">Membandingkan kecepatan realisasi saat ini terhadap yang dibutuhkan untuk mencapai target resmi maupun proyeksi yang sedang dihitung.</p>
+    <div class="grid grid-3">
       <div class="card">
-        <div class="kpi-label" style="margin-bottom:8px;">Komposisi Setahun (Aktual + Proyeksi)</div>
-        <table><thead><tr><th>Komponen</th><th class="right">Rp</th><th class="right">%</th></tr></thead>
-        <tbody>${KOMPONEN_CATS.map(k=>`<tr><td>${KOMPONEN_LABELS[k]}</td><td class="right mono">${fmtRp(proj.totalPerCat[k])}</td><td class="right">${proj.totalSetahun>0?fmtPct(proj.totalPerCat[k]/proj.totalSetahun*100):'–'}</td></tr>`).join('')}
-        <tr><td><b>Total</b></td><td class="right mono"><b>${fmtRp(proj.totalSetahun)}</b></td><td class="right">100%</td></tr></tbody></table>
+        <div class="kpi-label">Rata-rata Harian s.d. Bulan Ini</div>
+        <div class="kpi-value mono" style="font-size:18px;">${rataHarianSdBulan===null?'–':fmtRpShort(rataHarianSdBulan)}</div>
+        <div class="kpi-sub">realisasi aktual ÷ ${hariSdBulanAktual} hari kerja</div>
+      </div>
+      <div class="card">
+        <div class="kpi-label">Rata-rata Harian utk Mencapai Target</div>
+        <div class="kpi-value mono ${rataHarianUntukTarget!==null&&rataHarianSdBulan!==null&&rataHarianUntukTarget>rataHarianSdBulan?'neg':'pos'}" style="font-size:18px;">${rataHarianUntukTarget===null?'–':fmtRpShort(rataHarianUntukTarget)}</div>
+        <div class="kpi-sub">${d.targetTahun===null?'target belum diisi':'sisa target ÷ '+hariSisaTahun+' hari kerja'}</div>
+      </div>
+      <div class="card">
+        <div class="kpi-label">Rata-rata Harian utk Mencapai Proyeksi</div>
+        <div class="kpi-value mono" style="font-size:18px;">${rataHarianUntukProyeksi===null?'–':fmtRpShort(rataHarianUntukProyeksi)}</div>
+        <div class="kpi-sub">proyeksi sisa tahun ÷ ${hariSisaTahun} hari kerja</div>
       </div>
     </div>
     <div class="footnote">Jumlah hari kerja mengikuti Kalender Hari Kerja (menu 📅 di atas). Rata-rata harian dihitung ulang otomatis setiap ada bulan baru yang terealisasi.</div>
   `;
-  makeChart('chart-komponen', {type:'doughnut', data:{labels:KOMPONEN_CATS.map(k=>KOMPONEN_LABELS[k]), datasets:[{data:KOMPONEN_CATS.map(k=>proj.totalPerCat[k]), backgroundColor:CHART_COLORS}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:11}}}}}});
   if(proj.totalAktual>0){
     makeChart('chart-komponen-aktual', {type:'pie', data:{labels:KOMPONEN_CATS.map(k=>KOMPONEN_LABELS[k]), datasets:[{data:KOMPONEN_CATS.map(k=>proj.totalAktualPerCat[k]), backgroundColor:CHART_COLORS}]},
       options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:10}}},
@@ -2193,6 +2308,12 @@ function renderKomponen(c){
   });
   const btnApplyKomp = document.getElementById('btn-apply-komp-adjust');
   if(btnApplyKomp) btnApplyKomp.onclick = applyAllKompAdjust;
+  const inTingkatBayar = document.getElementById('in-tingkat-bayar');
+  if(inTingkatBayar){
+    const applyTingkatBayar = ()=>{ state.tingkatBayarPotensi = inTingkatBayar.value; renderTab(); };
+    inTingkatBayar.onchange = applyTingkatBayar;
+    inTingkatBayar.onkeydown = e=>{ if(e.key==='Enter') applyTingkatBayar(); };
+  }
   c.querySelectorAll('[data-preset-all]').forEach(btn=>{
     btn.onclick = ()=>{
       const v = parseFloat(btn.getAttribute('data-preset-all'));
