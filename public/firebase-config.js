@@ -8,10 +8,11 @@
 // firebaseConfig yang ditampilkan di situ, tempel menggantikan nilai di bawah.
 // ============================================================================
 window.FIREBASE_CONFIG = {
-  apiKey: "GANTI_DENGAN_API_KEY",
-  authDomain: "GANTI.firebaseapp.com",
-  projectId: "GANTI_PROJECT_ID",
-  storageBucket: "GANTI.appspot.com",
-  messagingSenderId: "GANTI",
-  appId: "GANTI",
+  apiKey: "AIzaSyC_BNW119yn2mzMaZlR-jDLMBDQpGs3jVw",
+  authDomain: "analitik-pajak-daerah.firebaseapp.com",
+  projectId: "analitik-pajak-daerah",
+  storageBucket: "analitik-pajak-daerah.firebasestorage.app",
+  messagingSenderId: "244981013609",
+  appId: "1:244981013609:web:2e1e3860fc901cb89356f8",
+  measurementId: "G-DMTFCHVHYG"
 };
