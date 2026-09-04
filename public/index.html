@@ -3,11 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Analitik Data Pajak Daerah — PKB</title>
+<title>Analitik Data Pajak Daerah — Bapenda Jawa Tengah</title>
+<meta name="description" content="Aplikasi analitik, capaian, dan proyeksi realisasi Pajak Kendaraan Bermotor (PKB), Bea Balik Nama Kendaraan Bermotor (BBNKB), dan Opsen per UPPD — Badan Pendapatan Daerah (Bapenda) Provinsi Jawa Tengah.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="xlsx.full.min.js"></script>
+<script>window.XLSX || document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"><\/script>')</script>
+<script src="chart.js"></script>
+<script>window.Chart || document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"><\/script>')</script>
 <style>
 :root{
   --navy-900:#0A1E38; --navy-800:#0F2A4A; --navy-700:#15385F; --navy-600:#1C4A7A;
@@ -156,7 +159,7 @@ tr:last-child td{border-bottom:none;}
       <span class="eyebrow">Bapenda Provinsi Jawa Tengah</span>
     </div>
     <h1>Analitik Data Pajak Daerah</h1>
-    <p class="sub">Pajak Kendaraan Bermotor (PKB) &amp; Opsen PKB — capaian, komponen, dan tren per UPPD</p>
+    <p class="sub">Capaian, analisis, dan proyeksi realisasi Pajak Kendaraan Bermotor (PKB), Bea Balik Nama Kendaraan Bermotor (BBNKB), dan Opsen — per UPPD, Provinsi Jawa Tengah</p>
     <div class="filters-row">
       <select id="f-uppd"></select>
       <select id="f-tahun"></select>
@@ -195,15 +198,15 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/fireba
 import { getFirestore, doc, setDoc, getDoc, getDocs, deleteDoc, collection } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import { getAuth, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+// TODO: ganti dengan config dari Firebase Console (Project settings > General > Your apps > SDK setup).
+// Nilai ini AMAN untuk ditaruh di kode publik — proteksi data sesungguhnya ada di firestore.rules, bukan di sini.
 const firebaseConfig = {
-  apiKey: "AIzaSyC_BNW119yn2mzMaZlR-jDLMBDQpGs3jVw",
-  authDomain: "analitik-pajak-daerah.firebaseapp.com",
-  projectId: "analitik-pajak-daerah",
-  storageBucket: "analitik-pajak-daerah.firebasestorage.app",
-  messagingSenderId: "244981013609",
-  appId: "1:244981013609:web:2e1e3860fc901cb89356f8",
-  measurementId: "G-DMTFCHVHYG"
+  apiKey: "GANTI_DENGAN_API_KEY",
+  authDomain: "GANTI.firebaseapp.com",
+  projectId: "GANTI_PROJECT_ID",
+  storageBucket: "GANTI.appspot.com",
+  messagingSenderId: "GANTI",
+  appId: "GANTI",
 };
 const FIRESTORE_COLLECTION = 'analitik_pajak_daerah';
 
@@ -2204,6 +2207,12 @@ function renderKomponen(c){
         <input type="number" id="in-tingkat-bayar" value="${state.tingkatBayarPotensi}" placeholder="mis. 85" step="1" min="0" max="100">
       </div>
       <div class="footnote">Diisi manual berdasarkan pengalaman/kebijakan Bapenda. Kosongkan untuk memakai rata-rata harian seperti biasa.</div>
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line-soft);font-size:12px;">
+        <div style="color:var(--ink-600);margin-bottom:4px;">Data Potensi terdeteksi untuk <b>${uppdLabel()} — ${state.tahun}</b>:</div>
+        ${(()=>{ const avail = []; for(let m=1;m<=12;m++){ if(potensiTotalFor(state.uppd,state.tahun,m)!==null) avail.push(MONTHS[m-1]); }
+          return avail.length? `<span class="pos">${avail.join(', ')}</span>` : `<span class="neg">Tidak ada — cek Kelola Data, pastikan UPPD &amp; Tahun upload cocok dengan filter di atas.</span>`; })()}
+        ${DB.potensi.length? `<div style="margin-top:6px;color:var(--ink-400);">Total ${DB.potensi.length} berkas Potensi tersimpan (semua UPPD/tahun) — cek "Kelola Data" untuk daftar lengkap.</div>` : ''}
+      </div>
     </div>
 
     <div class="section-title" style="margin-top:18px;">Rata-rata Harian per Komponen</div>
