@@ -7,6 +7,8 @@
 <meta name="description" content="Aplikasi analitik, capaian, dan proyeksi realisasi Pajak Kendaraan Bermotor (PKB), Bea Balik Nama Kendaraan Bermotor (BBNKB), dan Opsen per UPPD — Badan Pendapatan Daerah (Bapenda) Provinsi Jawa Tengah.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<!-- Config Firebase — isi SEKALI di sini (lihat firebase-config.example.js untuk contoh), tidak akan pernah ditimpa update berikutnya -->
+<script src="firebase-config.js"></script>
 <script src="xlsx.full.min.js"></script>
 <script>window.XLSX || document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"><\/script>')</script>
 <script src="chart.js"></script>
@@ -196,11 +198,11 @@ tr:last-child td{border-bottom:none;}
 /* ---------- Firebase (dipakai HANYA saat dijalankan di luar Claude, mis. GitHub Pages/Firebase Hosting) ---------- */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import { getFirestore, doc, setDoc, getDoc, getDocs, deleteDoc, collection } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
-import { getAuth, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
+import { getAuth, onAuthStateChanged, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 
-// TODO: ganti dengan config dari Firebase Console (Project settings > General > Your apps > SDK setup).
-// Nilai ini AMAN untuk ditaruh di kode publik — proteksi data sesungguhnya ada di firestore.rules, bukan di sini.
-const firebaseConfig = {
+// Config Firebase sekarang ada di file terpisah "firebase-config.js" (lihat window.FIREBASE_CONFIG di bawah)
+// supaya TIDAK PERNAH tertimpa lagi setiap kali file index.html ini diperbarui.
+const firebaseConfig = window.FIREBASE_CONFIG || {
   apiKey: "GANTI_DENGAN_API_KEY",
   authDomain: "GANTI.firebaseapp.com",
   projectId: "GANTI_PROJECT_ID",
@@ -2361,7 +2363,7 @@ function renderLoginOverlay(){
       <button class="btn btn-primary" id="btn-google-signin">Masuk dengan Google</button>
     </div>`;
   document.getElementById('btn-google-signin').onclick = async ()=>{
-    try{ await signInWithPopup(fbAuth, new GoogleAuthProvider()); }
+    try{ await signInWithRedirect(fbAuth, new GoogleAuthProvider()); }
     catch(e){ console.error(e); showToast('Gagal masuk: '+(e.message||'coba lagi')); }
   };
 }
@@ -2377,6 +2379,7 @@ function renderUserBar(){
 }
 
 if(USE_FIREBASE){
+  getRedirectResult(fbAuth).catch(e=>{ console.error('Redirect sign-in error', e); showToast('Gagal masuk: '+(e.message||'coba lagi')); });
   onAuthStateChanged(fbAuth, async (user)=>{
     fbUser = user;
     if(user){ hideLoginOverlay(); renderUserBar(); await init(); }
