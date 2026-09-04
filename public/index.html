@@ -6,8 +6,10 @@
 <title>Analitik Data Pajak Daerah — PKB</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="xlsx.full.min.js"></script>
+<script>window.XLSX || document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"><\/script>')</script>
+<script src="chart.js"></script>
+<script>window.Chart || document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"><\/script>')</script>
 <style>
 :root{
   --navy-900:#0A1E38; --navy-800:#0F2A4A; --navy-700:#15385F; --navy-600:#1C4A7A;
@@ -2204,6 +2206,12 @@ function renderKomponen(c){
         <input type="number" id="in-tingkat-bayar" value="${state.tingkatBayarPotensi}" placeholder="mis. 85" step="1" min="0" max="100">
       </div>
       <div class="footnote">Diisi manual berdasarkan pengalaman/kebijakan Bapenda. Kosongkan untuk memakai rata-rata harian seperti biasa.</div>
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line-soft);font-size:12px;">
+        <div style="color:var(--ink-600);margin-bottom:4px;">Data Potensi terdeteksi untuk <b>${uppdLabel()} — ${state.tahun}</b>:</div>
+        ${(()=>{ const avail = []; for(let m=1;m<=12;m++){ if(potensiTotalFor(state.uppd,state.tahun,m)!==null) avail.push(MONTHS[m-1]); }
+          return avail.length? `<span class="pos">${avail.join(', ')}</span>` : `<span class="neg">Tidak ada — cek Kelola Data, pastikan UPPD &amp; Tahun upload cocok dengan filter di atas.</span>`; })()}
+        ${DB.potensi.length? `<div style="margin-top:6px;color:var(--ink-400);">Total ${DB.potensi.length} berkas Potensi tersimpan (semua UPPD/tahun) — cek "Kelola Data" untuk daftar lengkap.</div>` : ''}
+      </div>
     </div>
 
     <div class="section-title" style="margin-top:18px;">Rata-rata Harian per Komponen</div>
